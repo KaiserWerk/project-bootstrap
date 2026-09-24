@@ -55,6 +55,8 @@ func main() {
 		fmt.Println("pb list: list installed modules (stub)")
 	case "update":
 		fmt.Println("pb update: update modules (stub)")
+	case "index":
+		indexCmd()
 	case "doctor":
 		fmt.Println("pb doctor: health checks (stub)")
 	default:
@@ -285,4 +287,15 @@ func addModule(mod string) {
 			fmt.Println("Ran go mod tidy")
 		}
 	}
+}
+
+func indexCmd() {
+	cfg := config.LoadConfig()
+	reg := registry.New(cfg.Sources)
+	idxPath, err := reg.BuildIndex()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed building index: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Index written to:", idxPath)
 }

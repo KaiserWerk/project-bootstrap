@@ -30,6 +30,8 @@ type IndexEntry struct {
 	Tags        []string      `json:"tags,omitempty"`
 	Commit      string        `json:"commit,omitempty"`
 	Modules     []ModuleIndex `json:"modules,omitempty"`
+	RemoteURL   string        `json:"remote_url,omitempty"`
+	LastUpdated string        `json:"last_updated,omitempty"`
 }
 
 // BuildIndex scans cached repositories for `pb.yaml` manifests and writes an index.json.
@@ -52,11 +54,27 @@ func (r *Registry) BuildIndex() (string, error) {
 
 			idx := IndexEntry{Name: m.Project.Name, RepoDir: repoDir, Manifest: path, Description: m.Project.Description, Tags: m.Project.Tags}
 
-			// detect git commit
+			// detect git commit, remote url, and last-updated
 			if gitPath, err := exec.LookPath("git"); err == nil {
+				// commit
 				cmd := exec.Command(gitPath, "-C", repoDir, "rev-parse", "HEAD")
 				if out, err := cmd.Output(); err == nil {
 					idx.Commit = strings.TrimSpace(string(out))
+				}
+				// remote url
+				cmd2 := exec.Command(gitPath, "-C", repoDir, "remote", "get-url", "origin")
+				if out2, err := cmd2.Output(); err == nil {
+					idx.RemoteURL = strings.TrimSpace(string(out2))
+				}
+				// last-updated (committer date ISO)
+				cmd3 := exec.Command(gitPath, "-C", repoDir, "log", "-1", "--format=%cI")
+				if out3, err := cmd3.Output(); err == nil {
+					idx.LastUpdated = strings.TrimSpace(string(out3))
+				}
+			}
+			if idx.LastUpdated == "" {
+				if fi, err := os.Stat(repoDir); err == nil {
+					idx.LastUpdated = fi.ModTime().UTC().Format("2006-01-02T15:04:05Z")
 				}
 			}
 
