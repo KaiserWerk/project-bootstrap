@@ -6,8 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"strings"
+
 	"github.com/KaiserWerk/project-bootstrap/internal/config"
 	"github.com/KaiserWerk/project-bootstrap/internal/registry"
+	templatepkg "github.com/KaiserWerk/project-bootstrap/internal/template"
+	"gopkg.in/yaml.v3"
 )
 
 func main() {
@@ -31,15 +35,10 @@ func main() {
 		info(os.Args[2])
 	case "create-project":
 		if len(os.Args) < 3 {
-			fmt.Println("usage: pb create-project <template> [name]")
+			fmt.Println("usage: pb create-project <template> [name] [--vars=vars.yaml]")
 			os.Exit(2)
 		}
-		tmpl := os.Args[2]
-		name := ""
-		if len(os.Args) >= 4 {
-			name = os.Args[3]
-		}
-		createProject(tmpl, name)
+		createProjectArgs(os.Args[2:])
 	case "add-module":
 		if len(os.Args) < 3 {
 			fmt.Println("usage: pb add-module <module>")
@@ -142,6 +141,54 @@ func createProject(template, name string) {
 	dst := filepath.Join(".", name)
 	fmt.Printf("pb create-project: template=%s name=%s dst=%s\n", template, name, dst)
 	// TODO: implement template copy and variable prompts
+}
+
+func createProjectArgs(args []string) {
+	tmpl := args[0]
+	name := ""
+	varsPath := ""
+	for _, a := range args[1:] {
+		if strings.HasPrefix(a, "--vars=") {
+			varsPath = strings.TrimPrefix(a, "--vars=")
+			continue
+		}
+		if name == "" {
+			name = a
+		}
+	}
+	if name == "" {
+		name = tmpl + "-project"
+	}
+
+	cfg := config.LoadConfig()
+	reg := registry.New(cfg.Sources)
+	e, err := reg.FindModule(tmpl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: template not found: %v\n", err)
+		os.Exit(2)
+	}
+
+	dst := filepath.Join(".", name)
+	fmt.Printf("create-project: using template %s from %s -> %s\n", tmpl, e.RepoDir, dst)
+
+	vars := map[string]string{}
+	if varsPath != "" {
+		data, err := os.ReadFile(varsPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pb: failed reading vars file: %v\n", err)
+			os.Exit(2)
+		}
+		if err := yaml.Unmarshal(data, &vars); err != nil {
+			fmt.Fprintf(os.Stderr, "pb: failed parsing vars file: %v\n", err)
+			os.Exit(2)
+		}
+	}
+
+	if err := templatepkg.ApplyTemplate(e.RepoDir, dst, vars); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed creating project: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Project created at", dst)
 }
 
 func addModule(mod string) {
