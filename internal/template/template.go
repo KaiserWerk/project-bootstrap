@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"text/template"
 )
 
@@ -69,4 +70,47 @@ func ApplyTemplate(srcRoot, dstRoot string, vars map[string]string) error {
 		}
 		return os.WriteFile(dest, data, 0o644)
 	})
+}
+
+// CollectVariables scans template files under srcRoot and returns a deduplicated list
+// of variable identifiers referenced as `{{ .Var }}` in templates.
+func CollectVariables(srcRoot string) ([]string, error) {
+	var vars []string
+	seen := map[string]bool{}
+	// regex to match {{ .var }} (simple identifier)
+	re := regexp.MustCompile(`{{\s*\.([a-zA-Z0-9_]+)\s*}}`)
+
+	err := filepath.WalkDir(srcRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == "pb.yaml" {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		matches := re.FindAllSubmatch(data, -1)
+		for _, m := range matches {
+			if len(m) >= 2 {
+				name := string(m[1])
+				if !seen[name] {
+					seen[name] = true
+					vars = append(vars, name)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return vars, nil
 }

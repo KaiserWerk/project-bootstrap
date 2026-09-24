@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"bufio"
+
 	"github.com/KaiserWerk/project-bootstrap/internal/config"
 	golang "github.com/KaiserWerk/project-bootstrap/internal/language/golang"
 	modulepkg "github.com/KaiserWerk/project-bootstrap/internal/module"
@@ -182,6 +184,20 @@ func createProjectArgs(args []string) {
 		if err := yaml.Unmarshal(data, &vars); err != nil {
 			fmt.Fprintf(os.Stderr, "pb: failed parsing vars file: %v\n", err)
 			os.Exit(2)
+		}
+	}
+
+	// collect variables from template and prompt for any missing
+	needed, err := templatepkg.CollectVariables(e.RepoDir)
+	if err == nil && len(needed) > 0 {
+		reader := bufio.NewReader(os.Stdin)
+		for _, v := range needed {
+			if _, ok := vars[v]; !ok {
+				fmt.Printf("Enter value for %s: ", v)
+				line, _ := reader.ReadString('\n')
+				val := strings.TrimSpace(line)
+				vars[v] = val
+			}
 		}
 	}
 
