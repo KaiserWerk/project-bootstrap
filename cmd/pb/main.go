@@ -91,6 +91,13 @@ func search(args []string) {
 	fmt.Printf("pb search: query=%q\n", query)
 	fmt.Printf("Configured sources: %v\n", cfg.Sources)
 	reg := registry.New(cfg.Sources)
+
+	// auto-update index so `pb search` reflects latest registry metadata
+	if idxPath, err := reg.BuildIndex(); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: warning: failed building index: %v\n", err)
+	} else {
+		fmt.Printf("pb: refreshed index at %s\n", idxPath)
+	}
 	results, err := reg.Search(query)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pb: search error: %v\n", err)

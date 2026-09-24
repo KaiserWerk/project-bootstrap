@@ -76,6 +76,48 @@ func (r *Registry) Search(query string) ([]Entry, error) {
 	}
 
 	var results []Entry
+	// try using index.json for faster searches
+	if idxEntries, err := r.LoadIndex(); err == nil {
+		ql := strings.ToLower(query)
+		for _, ie := range idxEntries {
+			match := false
+			if query == "" || strings.Contains(strings.ToLower(ie.Name), ql) {
+				match = true
+			}
+			if !match && ie.Description != "" {
+				if strings.Contains(strings.ToLower(ie.Description), ql) {
+					match = true
+				}
+			}
+			if !match && len(ie.Tags) > 0 {
+				for _, t := range ie.Tags {
+					if strings.Contains(strings.ToLower(t), ql) {
+						match = true
+						break
+					}
+				}
+			}
+			if !match && len(ie.Modules) > 0 {
+				for _, m := range ie.Modules {
+					if strings.Contains(strings.ToLower(m.Name), ql) {
+						match = true
+						break
+					}
+				}
+			}
+			if match {
+				var manifest *project.Manifest
+				if ie.Manifest != "" {
+					if mm, err := project.Load(ie.Manifest); err == nil {
+						manifest = mm
+					}
+				}
+				results = append(results, Entry{Name: ie.Name, RepoDir: ie.RepoDir, Manifest: manifest})
+			}
+		}
+		return results, nil
+	}
+
 	if _, err := os.Stat(r.CacheDir); os.IsNotExist(err) {
 		return results, nil
 	}
