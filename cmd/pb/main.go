@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
 	"strings"
 
 	"github.com/KaiserWerk/project-bootstrap/internal/config"
+	golang "github.com/KaiserWerk/project-bootstrap/internal/language/golang"
+	modulepkg "github.com/KaiserWerk/project-bootstrap/internal/module"
 	"github.com/KaiserWerk/project-bootstrap/internal/registry"
 	templatepkg "github.com/KaiserWerk/project-bootstrap/internal/template"
 	"gopkg.in/yaml.v3"
@@ -200,5 +201,16 @@ func addModule(mod string) {
 		os.Exit(2)
 	}
 	fmt.Printf("Installing module %s from %s (manifest project: %s)\n", mod, e.RepoDir, e.Name)
-	fmt.Println("TODO: copy files into project, update pb.yaml and pb.lock")
+	if err := modulepkg.InstallFromRepo(e.RepoDir, mod, "."); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: install failed: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("Module installed into current project")
+	if e.Manifest != nil && e.Manifest.Project.Language == "go" {
+		if err := golang.RunTidy("."); err != nil {
+			fmt.Fprintf(os.Stderr, "pb: go mod tidy failed: %v\n", err)
+		} else {
+			fmt.Println("Ran go mod tidy")
+		}
+	}
 }
