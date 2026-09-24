@@ -2,9 +2,9 @@ package golang
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
-	"os"
 
 	"golang.org/x/mod/modfile"
 )
