@@ -1,11 +1,14 @@
 package module
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
+	golang "github.com/KaiserWerk/project-bootstrap/internal/language/golang"
 	"github.com/KaiserWerk/project-bootstrap/internal/lockfile"
 	"github.com/KaiserWerk/project-bootstrap/internal/project"
 )
@@ -68,6 +71,37 @@ func InstallFromRepo(repoDir, moduleName, dstRoot string) error {
 	lf.Modules[moduleName] = lockfile.ModuleLock{Version: "", Commit: ""}
 	if err := lf.Save(lockPath); err != nil {
 		return fmt.Errorf("failed to save pb.lock: %w", err)
+	}
+
+	// If the module source contains a go.mod, try to add a require to the project's go.mod.
+	goModPath := filepath.Join(src, "go.mod")
+	if _, err := os.Stat(goModPath); err == nil {
+		// read module path from go.mod
+		f, err := os.Open(goModPath)
+		if err == nil {
+			defer f.Close()
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if strings.HasPrefix(line, "module ") {
+					modPath := strings.TrimSpace(strings.TrimPrefix(line, "module"))
+					modPath = strings.TrimSpace(modPath)
+					version := ""
+					// if manifest had a version for this module, use it
+					for _, me := range m.Modules {
+						if me.Name == moduleName && me.Version != "" {
+							version = me.Version
+							break
+						}
+					}
+					if err := golang.AddRequire(modPath, version, dstRoot); err != nil {
+						// non-fatal: warn and continue
+						fmt.Fprintf(os.Stderr, "pb: warning: failed to add go require %s: %v\n", modPath, err)
+					}
+					break
+				}
+			}
+		}
 	}
 
 	return nil
