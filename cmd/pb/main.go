@@ -77,9 +77,14 @@ func printUsage() {
 func search(args []string) {
 	jsonOut := false
 	query := ""
+	noIndex := false
 	for _, a := range args {
 		if a == "--json" || a == "-j" {
 			jsonOut = true
+			continue
+		}
+		if a == "--no-index" || a == "-n" {
+			noIndex = true
 			continue
 		}
 		if query == "" {
@@ -92,11 +97,15 @@ func search(args []string) {
 	fmt.Printf("Configured sources: %v\n", cfg.Sources)
 	reg := registry.New(cfg.Sources)
 
-	// auto-update index so `pb search` reflects latest registry metadata
-	if idxPath, err := reg.BuildIndex(); err != nil {
-		fmt.Fprintf(os.Stderr, "pb: warning: failed building index: %v\n", err)
+	// auto-update index so `pb search` reflects latest registry metadata (unless disabled)
+	if !noIndex {
+		if idxPath, err := reg.BuildIndex(); err != nil {
+			fmt.Fprintf(os.Stderr, "pb: warning: failed building index: %v\n", err)
+		} else {
+			fmt.Printf("pb: refreshed index at %s\n", idxPath)
+		}
 	} else {
-		fmt.Printf("pb: refreshed index at %s\n", idxPath)
+		fmt.Println("pb: skipping index refresh (--no-index)")
 	}
 	results, err := reg.Search(query)
 	if err != nil {
