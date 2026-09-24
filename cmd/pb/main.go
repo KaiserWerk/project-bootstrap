@@ -8,6 +8,9 @@ import (
 	"strings"
 
 	"bufio"
+	"regexp"
+
+	"golang.org/x/term"
 
 	"github.com/KaiserWerk/project-bootstrap/internal/config"
 	golang "github.com/KaiserWerk/project-bootstrap/internal/language/golang"
@@ -190,13 +193,66 @@ func createProjectArgs(args []string) {
 	// collect variables from template and prompt for any missing
 	needed, err := templatepkg.CollectVariables(e.RepoDir)
 	if err == nil && len(needed) > 0 {
+		isTTY := term.IsTerminal(int(os.Stdin.Fd()))
 		reader := bufio.NewReader(os.Stdin)
 		for _, v := range needed {
-			if _, ok := vars[v]; !ok {
-				fmt.Printf("Enter value for %s: ", v)
+			if _, ok := vars[v]; ok {
+				continue
+			}
+			// check manifest defaults/validation
+			varDef := ""
+			varValidate := ""
+			varRequired := false
+			if e.Manifest != nil {
+				if tv, ok := e.Manifest.TemplateVars[v]; ok {
+					varDef = tv.Default
+					varValidate = tv.Validate
+					varRequired = tv.Required
+				}
+			}
+
+			if !isTTY {
+				if varDef != "" {
+					vars[v] = varDef
+					continue
+				}
+				if varRequired {
+					fmt.Fprintf(os.Stderr, "pb: missing required variable %s and no TTY available\n", v)
+					os.Exit(2)
+				}
+				// non-required and no default: leave empty
+				vars[v] = ""
+				continue
+			}
+
+			for {
+				prompt := v
+				if varDef != "" {
+					prompt = fmt.Sprintf("%s (default: %s)", v, varDef)
+				}
+				fmt.Printf("Enter value for %s: ", prompt)
 				line, _ := reader.ReadString('\n')
 				val := strings.TrimSpace(line)
+				if val == "" && varDef != "" {
+					val = varDef
+				}
+				if val == "" && varRequired {
+					fmt.Println("value required")
+					continue
+				}
+				if varValidate != "" && val != "" {
+					re, rerr := regexp.Compile(varValidate)
+					if rerr != nil {
+						fmt.Fprintf(os.Stderr, "pb: invalid validate regex for %s: %v\n", v, rerr)
+						break
+					}
+					if !re.MatchString(val) {
+						fmt.Println("value does not match required pattern")
+						continue
+					}
+				}
 				vars[v] = val
+				break
 			}
 		}
 	}

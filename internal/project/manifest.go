@@ -22,6 +22,14 @@ type ProjectInfo struct {
 type Manifest struct {
 	Project ProjectInfo   `yaml:"project"`
 	Modules []ModuleEntry `yaml:"modules,omitempty"`
+	// TemplateVars allows templates to declare expected variables, defaults, and validation.
+	TemplateVars map[string]TemplateVar `yaml:"template_vars,omitempty"`
+}
+
+type TemplateVar struct {
+	Default  string `yaml:"default,omitempty"`
+	Validate string `yaml:"validate,omitempty"` // regex
+	Required bool   `yaml:"required,omitempty"`
 }
 
 // Load reads a manifest from the given path.
