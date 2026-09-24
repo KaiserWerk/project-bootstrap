@@ -6,12 +6,15 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type IndexEntry struct {
-	Name     string `json:"name"`
-	RepoDir  string `json:"repo_dir"`
-	Manifest string `json:"manifest_path,omitempty"`
+	Name        string   `json:"name"`
+	RepoDir     string   `json:"repo_dir"`
+	Manifest    string   `json:"manifest_path,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
 }
 
 // BuildIndex scans cached repositories for `pb.yaml` manifests and writes an index.json.
@@ -27,7 +30,32 @@ func (r *Registry) BuildIndex() (string, error) {
 		}
 		if !d.IsDir() && d.Name() == "pb.yaml" {
 			repoDir := filepath.Dir(path)
-			e := IndexEntry{Name: filepath.Base(repoDir), RepoDir: repoDir, Manifest: path}
+			// attempt to parse manifest for description/tags
+			desc := ""
+			var tags []string
+			if data, err := os.ReadFile(path); err == nil {
+				// simple parse: look for 'description:' and 'tags:' lines
+				lines := strings.Split(string(data), "\n")
+				for i, L := range lines {
+					l := strings.TrimSpace(L)
+					if strings.HasPrefix(l, "description:") {
+						desc = strings.TrimSpace(strings.TrimPrefix(l, "description:"))
+						desc = strings.Trim(desc, "\"")
+					}
+					if strings.HasPrefix(l, "tags:") {
+						// collect subsequent list items
+						for j := i + 1; j < len(lines); j++ {
+							s := strings.TrimSpace(lines[j])
+							if strings.HasPrefix(s, "-") {
+								tags = append(tags, strings.TrimSpace(strings.TrimPrefix(s, "-")))
+							} else {
+								break
+							}
+						}
+					}
+				}
+			}
+			e := IndexEntry{Name: filepath.Base(repoDir), RepoDir: repoDir, Manifest: path, Description: desc, Tags: tags}
 			entries = append(entries, e)
 		}
 		return nil

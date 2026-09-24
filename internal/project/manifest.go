@@ -15,6 +15,8 @@ type ProjectInfo struct {
 	Name     string `yaml:"name"`
 	Language string `yaml:"language"`
 	Type     string `yaml:"type"`
+	Description string   `yaml:"description,omitempty"`
+	Tags        []string `yaml:"tags,omitempty"`
 }
 
 type Manifest struct {
