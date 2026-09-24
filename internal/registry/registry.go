@@ -99,6 +99,20 @@ func (r *Registry) Search(query string) ([]Entry, error) {
 						}
 					}
 				}
+				if !match && m.Project.Description != "" {
+					if strings.Contains(strings.ToLower(m.Project.Description), strings.ToLower(query)) {
+						match = true
+					}
+				}
+				if !match && len(m.Project.Tags) > 0 {
+					ql := strings.ToLower(query)
+					for _, t := range m.Project.Tags {
+						if strings.Contains(strings.ToLower(t), ql) {
+							match = true
+							break
+						}
+					}
+				}
 				if match {
 					// repo dir is two levels up from pb.yaml in our layout
 					repoDir := filepath.Dir(path)
