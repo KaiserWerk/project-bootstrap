@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	golang "github.com/KaiserWerk/project-bootstrap/internal/language/golang"
 	"github.com/KaiserWerk/project-bootstrap/internal/lockfile"
@@ -23,8 +24,29 @@ func InstallFromRepo(repoDir, moduleName, dstRoot string) error {
 		src = candidate
 	}
 
+	// detect conflicts
+	conflicts, err := detectConflicts(src, dstRoot)
+	if err != nil {
+		return fmt.Errorf("conflict detection failed: %w", err)
+	}
+
+	var backupDir string
+	if len(conflicts) > 0 {
+		backupDir, err = createBackup(dstRoot, conflicts)
+		if err != nil {
+			return fmt.Errorf("failed to backup conflicting files: %w", err)
+		}
+		fmt.Printf("pb: backed up %d conflicting files to %s\n", len(conflicts), backupDir)
+	}
+
 	// copy files
 	if err := copyDir(src, dstRoot); err != nil {
+		// attempt rollback
+		if backupDir != "" {
+			if rerr := restoreBackup(backupDir, dstRoot); rerr != nil {
+				return fmt.Errorf("copy failed: %v; rollback failed: %v", err, rerr)
+			}
+		}
 		return fmt.Errorf("copy failed: %w", err)
 	}
 
@@ -156,4 +178,74 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return nil
+}
+
+// detectConflicts returns a list of relative paths (from src) that would collide in dstRoot.
+func detectConflicts(src, dstRoot string) ([]string, error) {
+	var conflicts []string
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == "pb.yaml" {
+			return nil
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return nil
+		}
+		target := filepath.Join(dstRoot, rel)
+		if _, err := os.Stat(target); err == nil {
+			conflicts = append(conflicts, rel)
+		}
+		return nil
+	})
+	return conflicts, err
+}
+
+// createBackup moves conflicting files into a timestamped backup directory under dstRoot/.pb/backups.
+func createBackup(dstRoot string, conflicts []string) (string, error) {
+	ts := time.Now().UTC().Format("20060102T150405Z")
+	backupDir := filepath.Join(dstRoot, ".pb", "backups", ts)
+	for _, rel := range conflicts {
+		srcPath := filepath.Join(dstRoot, rel)
+		destPath := filepath.Join(backupDir, rel)
+		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+			return "", err
+		}
+		if err := os.Rename(srcPath, destPath); err != nil {
+			return "", err
+		}
+	}
+	return backupDir, nil
+}
+
+// restoreBackup moves files from backupDir back into dstRoot (best-effort).
+func restoreBackup(backupDir, dstRoot string) error {
+	return filepath.WalkDir(backupDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(backupDir, path)
+		if err != nil {
+			return nil
+		}
+		dest := filepath.Join(dstRoot, rel)
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return err
+		}
+		if err := os.Rename(path, dest); err != nil {
+			return err
+		}
+		return nil
+	})
 }
