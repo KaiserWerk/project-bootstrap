@@ -1,0 +1,1110 @@
+# Project Module CLI – Implementierungsplan
+
+## 1. Ziel
+
+Entwicklung eines lokalen CLI-Tools, mit dem wiederverwendbare, aber projektspezifische Code-Bausteine aus einer zentralen Sammlung in neue Projekte übernommen werden können.
+
+Das Tool soll insbesondere das wiederholte Kopieren und Anpassen von bewährtem Code aus bestehenden Projekten ersetzen.
+
+Beispiele:
+
+```bash
+tool create-project --language go --type web
+tool search auth
+tool info frontend-auth
+tool add-module frontend-auth
+tool list
+```
+
+Das Tool ist **kein klassischer Package Manager**.
+
+Der zentrale Unterschied:
+
+* Libraries stellen stabile, wiederverwendbare APIs bereit.
+* Module stellen bewährten Ausgangscode für ein konkretes Projekt bereit.
+* Der installierte Modul-Code gehört anschließend dem Projekt und darf verändert werden.
+
+---
+
+# 2. Grundprinzipien
+
+## 2.1 Kein LLM
+
+Der komplette MVP arbeitet deterministisch.
+
+Keine KI-gestützte Codeanalyse, keine automatische Interpretation von Projektstrukturen.
+
+## 2.2 Git als Infrastruktur
+
+Für den MVP wird Git als Transport- und Versionsmechanismus verwendet.
+
+Es soll kein eigener Server erforderlich sein.
+
+Ein Registry-Repository kann beispielsweise auf GitHub, GitLab, Gitea oder einem beliebigen Git-Server liegen.
+
+## 2.3 Copy & Modify ist ausdrücklich erlaubt
+
+Installierter Modul-Code ist kein unveränderliches Package.
+
+Beispiel:
+
+```text
+tool add-module frontend-auth
+```
+
+kopiert Code in das Projekt.
+
+Danach darf der Entwickler den Code beliebig verändern.
+
+## 2.4 Konvention vor Magie
+
+Das Tool soll nicht versuchen, beliebige bestehende Projekte automatisch zu verstehen.
+
+Unterstützt werden zunächst bekannte Projektstrukturen und explizite Operationen.
+
+## 2.5 Einfachheit vor Vollständigkeit
+
+Der MVP soll möglichst wenig Infrastruktur und möglichst wenig Konfiguration benötigen.
+
+---
+
+# 3. Begriffe
+
+## Project Template
+
+Ausgangspunkt für ein neues Projekt.
+
+Beispiel:
+
+```text
+web-go
+web-csharp
+api-go
+```
+
+## Module
+
+Wiederverwendbarer projektspezifischer Code.
+
+Beispiele:
+
+```text
+frontend-auth
+email
+postgres
+stripe-payment
+http-client
+```
+
+## Library
+
+Externe oder interne Abhängigkeit, die über den jeweiligen Package Manager eingebunden wird.
+
+Beispielsweise:
+
+```text
+github.com/foo/bar
+NuGet package
+npm package
+```
+
+Das Tool kann Libraries als Abhängigkeit eines Moduls verwenden, verwaltet sie aber nicht selbst.
+
+---
+
+# 4. MVP Scope
+
+Der erste MVP unterstützt:
+
+* Git-basierte Registry
+* Module
+* Module-Versionen
+* Sprachzuordnung
+* einfache Suche
+* Modul-Informationen
+* Kopieren von Dateien
+* einfache Templates in Dateien
+* Projektmanifest
+* Lockfile
+* einfache Dependencies
+* Go als erste Sprache
+* einfache Projekt-Templates
+
+Nicht Bestandteil des MVP:
+
+* LLM
+* AST-basierte Codeänderungen
+* automatische Erkennung beliebiger Projektstrukturen
+* eigene Web-Registry
+* Benutzerverwaltung
+* zentrale SaaS-Infrastruktur
+* komplexes Dependency Resolution
+* automatisches Entfernen veränderter Dateien
+* Package-Manager-Ersatz
+
+---
+
+# 5. CLI
+
+Initiale Befehle:
+
+```text
+tool init
+tool search <term>
+tool info <module>
+tool create-project <template>
+tool add-module <module>
+tool list
+tool update
+tool doctor
+```
+
+Beispiele:
+
+```bash
+tool search auth
+```
+
+```bash
+tool info frontend-auth
+```
+
+```bash
+tool create-project web-go my-project
+```
+
+```bash
+tool add-module frontend-auth
+```
+
+```bash
+tool list
+```
+
+---
+
+# 6. Projektdateien
+
+Ein von `tool create-project` erzeugtes Projekt enthält:
+
+```text
+my-project/
+├── tool.yaml
+├── tool.lock
+├── go.mod
+├── cmd/
+├── internal/
+└── ...
+```
+
+## tool.yaml
+
+Beispiel:
+
+```yaml
+project:
+  name: my-project
+  language: go
+  type: web
+
+modules:
+  - name: frontend-auth
+    version: 1.0.0
+
+  - name: email
+    version: 1.2.0
+```
+
+Das Manifest beschreibt die absichtlich installierten Module.
+
+---
+
+# 7. Lockfile
+
+`tool.lock` hält die tatsächlich verwendeten Modulversionen fest.
+
+Beispiel:
+
+```yaml
+modules:
+  frontend-auth:
+    version: 1.0.0
+    commit: abc123
+
+  email:
+    version: 1.2.0
+    commit: def456
+```
+
+Ziel:
+
+* reproduzierbare Installationen
+* eindeutige Git-Version
+* spätere Updates ermöglichen
+
+---
+
+# 8. Registry
+
+Der MVP verwendet ein Git-Repository als Registry.
+
+Beispiel:
+
+```text
+tool-registry/
+├── registry.yaml
+├── modules/
+│   ├── frontend-auth/
+│   │   ├── 1.0.0/
+│   │   │   └── module.yaml
+│   │   └── 1.1.0/
+│   │       └── module.yaml
+│   │
+│   └── email/
+│       └── 1.0.0/
+│           └── module.yaml
+│
+└── templates/
+    └── web-go/
+        └── template.yaml
+```
+
+Die Registry soll möglichst dumm sein.
+
+Das CLI interpretiert die Struktur.
+
+---
+
+# 9. registry.yaml
+
+Beispiel:
+
+```yaml
+modules:
+  - name: frontend-auth
+    versions:
+      - 1.0.0
+      - 1.1.0
+
+  - name: email
+    versions:
+      - 1.0.0
+
+templates:
+  - name: web-go
+```
+
+Für den MVP darf das CLI die Registry vollständig herunterladen und lokal durchsuchen.
+
+---
+
+# 10. Modulstruktur
+
+Beispiel:
+
+```text
+frontend-auth/
+└── 1.0.0/
+    ├── module.yaml
+    └── content/
+        ├── internal/
+        │   └── auth/
+        │       ├── auth.go
+        │       └── session.go
+        └── web/
+            └── auth.js
+```
+
+---
+
+# 11. module.yaml
+
+Minimal:
+
+```yaml
+name: frontend-auth
+version: 1.0.0
+
+description: Authentication module for web applications
+
+languages:
+  - go
+
+tags:
+  - authentication
+  - frontend
+  - security
+
+content:
+  - source: content/internal/auth
+    destination: internal/auth
+```
+
+---
+
+# 12. Templates
+
+Templates funktionieren ähnlich wie Module.
+
+Beispiel:
+
+```text
+templates/
+└── web-go/
+    └── template.yaml
+```
+
+```yaml
+name: web-go
+language: go
+type: web
+
+content:
+  - source: content
+    destination: .
+```
+
+Ein Template darf außerdem Module vorauswählen:
+
+```yaml
+modules:
+  - frontend-auth
+  - postgres
+```
+
+Die eigentliche Modulinstallation bleibt dabei dieselbe wie bei einem normalen `add-module`.
+
+---
+
+# 13. Dateioperationen
+
+Der MVP unterstützt zunächst nur wenige Operationen.
+
+## Copy
+
+```yaml
+operations:
+  - type: copy
+    source: content/internal/auth
+    destination: internal/auth
+```
+
+## Template
+
+Datei:
+
+```text
+package {{ .PackageName }}
+```
+
+Manifest:
+
+```yaml
+variables:
+  - name: PackageName
+    required: true
+```
+
+Das CLI fragt fehlende Werte interaktiv ab.
+
+---
+
+# 14. Dependency-Unterstützung
+
+Module können externe Abhängigkeiten deklarieren.
+
+Beispiel:
+
+```yaml
+dependencies:
+  go:
+    - module: github.com/example/foo
+      version: v1.2.3
+```
+
+Der Go-Adapter ist dafür verantwortlich, die Dependency korrekt in `go.mod` einzutragen.
+
+Wichtig:
+
+Das Modul soll nicht selbst `go get` oder beliebige Shell-Kommandos ausführen.
+
+Operationen bleiben kontrolliert und deterministisch.
+
+---
+
+# 15. Language Adapter
+
+Die Registry und Module sollen möglichst sprachunabhängig bleiben.
+
+Das CLI besitzt sprachspezifische Adapter.
+
+Initial:
+
+```text
+internal/
+└── language/
+    ├── language.go
+    └── go/
+        └── adapter.go
+```
+
+Interface grob:
+
+```go
+type Adapter interface {
+    Name() string
+
+    DetectProject(path string) (bool, error)
+
+    AddDependency(
+        projectPath string,
+        dependency Dependency,
+    ) error
+}
+```
+
+Weitere Adapter können später ergänzt werden:
+
+```text
+csharp
+typescript
+python
+```
+
+---
+
+# 16. Keine Shell-Skripte in Modulen
+
+Ein Modul darf im MVP keine beliebigen Commands ausführen.
+
+Nicht erlauben:
+
+```yaml
+commands:
+  - rm -rf ...
+  - curl ...
+  - powershell ...
+```
+
+Stattdessen definierte Operationen:
+
+```text
+copy
+template
+dependency
+```
+
+Weitere Operationen können später explizit implementiert werden.
+
+Das ist wichtig für Sicherheit und Reproduzierbarkeit.
+
+---
+
+# 17. Installation eines Moduls
+
+Ablauf:
+
+```text
+tool add-module frontend-auth
+        │
+        ▼
+Registry laden
+        │
+        ▼
+Modul suchen
+        │
+        ▼
+Version bestimmen
+        │
+        ▼
+Sprache des Projekts prüfen
+        │
+        ▼
+module.yaml laden
+        │
+        ▼
+Dependencies validieren
+        │
+        ▼
+Konflikte prüfen
+        │
+        ▼
+Dateien kopieren/template
+        │
+        ▼
+Language Adapter ausführen
+        │
+        ▼
+tool.yaml aktualisieren
+        │
+        ▼
+tool.lock aktualisieren
+```
+
+Bei Fehlern soll möglichst kein halbfertiges Projekt zurückbleiben.
+
+---
+
+# 18. Konflikterkennung
+
+Wenn eine Zieldatei bereits existiert:
+
+```text
+internal/auth/auth.go
+```
+
+darf das Tool nicht ungefragt überschreiben.
+
+Mögliche Ausgabe:
+
+```text
+File already exists:
+
+  internal/auth/auth.go
+
+Options:
+  [o] overwrite
+  [s] skip
+  [d] show diff
+  [c] cancel
+```
+
+Für den MVP reicht zunächst:
+
+```text
+overwrite
+skip
+cancel
+```
+
+---
+
+# 19. Installationsmetadaten
+
+Um später erkennen zu können, ob installierte Dateien verändert wurden, soll das Lockfile oder ein separates Manifest Hashes enthalten.
+
+Beispiel:
+
+```yaml
+files:
+  internal/auth/auth.go:
+    sha256: abc123...
+```
+
+Damit kann später festgestellt werden:
+
+```text
+unchanged
+modified
+deleted
+```
+
+Das ist Voraussetzung für zukünftige Features wie:
+
+```bash
+tool update
+tool remove-module
+tool diff
+```
+
+---
+
+# 20. Update
+
+Initiales Verhalten:
+
+```bash
+tool update
+```
+
+sucht für jedes installierte Modul eine neuere Version.
+
+Das Tool zeigt zunächst nur den geplanten Update-Vorgang.
+
+Beispiel:
+
+```text
+frontend-auth
+  installed: 1.0.0
+  available: 1.1.0
+
+email
+  installed: 1.2.0
+  available: 1.2.0
+```
+
+Der MVP muss noch keine intelligente Migration zwischen inkompatiblen Modulversionen durchführen.
+
+Bei einem Update werden Konflikte explizit angezeigt.
+
+---
+
+# 21. Search
+
+```bash
+tool search auth
+```
+
+durchsucht:
+
+* Modulname
+* Beschreibung
+* Tags
+* unterstützte Sprache
+
+Beispiel:
+
+```text
+NAME             LANGUAGE   VERSION   DESCRIPTION
+
+frontend-auth    go         1.1.0     Web authentication
+jwt              go         2.0.0     JWT utilities
+auth             csharp     1.0.0     Authentication helpers
+```
+
+---
+
+# 22. Info
+
+```bash
+tool info frontend-auth
+```
+
+zeigt:
+
+```text
+Name:        frontend-auth
+Version:     1.1.0
+
+Description:
+Web authentication module.
+
+Languages:
+go
+
+Tags:
+authentication
+security
+frontend
+
+Files:
+internal/auth/auth.go
+internal/auth/session.go
+
+Dependencies:
+github.com/example/jwt v5.0.0
+```
+
+---
+
+# 23. Lokaler Cache
+
+Git-Repositories und Module sollen lokal gecacht werden.
+
+Beispiel:
+
+```text
+~/.tool/
+├── config.yaml
+├── cache/
+│   └── registry/
+└── repositories/
+```
+
+Ziel:
+
+* schneller Zugriff
+* Offline-Nutzung bereits heruntergeladener Module
+* weniger Git-Netzwerkzugriffe
+
+Der genaue Cache-Aufbau ist nicht Teil des MVP-Vertrags und darf später geändert werden.
+
+---
+
+# 24. Konfiguration
+
+Globale Konfiguration:
+
+```text
+~/.tool/config.yaml
+```
+
+Beispiel:
+
+```yaml
+registry:
+  url: https://github.com/example/tool-registry.git
+```
+
+Später mehrere Registries:
+
+```yaml
+registries:
+  - name: public
+    url: https://github.com/example/tool-registry.git
+
+  - name: company
+    url: https://gitlab.company.local/tool-registry.git
+```
+
+Für den MVP genügt eine Registry.
+
+---
+
+# 25. Go-Projektstruktur
+
+Vorschlag:
+
+```text
+cmd/
+└── tool/
+
+internal/
+├── cli/
+├── registry/
+├── module/
+├── project/
+├── manifest/
+├── lockfile/
+├── template/
+├── cache/
+├── git/
+├── language/
+│   └── go/
+└── filesystem/
+```
+
+Wichtige Trennung:
+
+```text
+registry
+```
+
+kennt keine CLI-Logik.
+
+```text
+module
+```
+
+kennt keine Git-Implementierungsdetails.
+
+```text
+language/go
+```
+
+kennt keine Registry.
+
+---
+
+# 26. Implementierungsreihenfolge
+
+## Phase 1 – Core
+
+Implementieren:
+
+* Go CLI
+* Projektstruktur
+* `tool.yaml`
+* Modulmodell
+* Dateioperation `copy`
+* lokales Modulverzeichnis
+
+Ziel:
+
+```bash
+tool add-module ./my-module
+```
+
+funktioniert.
+
+Noch kein Git.
+
+---
+
+## Phase 2 – Git Registry
+
+Implementieren:
+
+* Registry Repository klonen
+* Registry laden
+* Module suchen
+* Module aus Registry installieren
+
+Ziel:
+
+```bash
+tool add-module frontend-auth
+```
+
+funktioniert über ein Git-Repository.
+
+---
+
+## Phase 3 – Templates
+
+Implementieren:
+
+```bash
+tool create-project web-go my-project
+```
+
+und:
+
+```bash
+tool create-project web-go my-project --with frontend-auth
+```
+
+---
+
+## Phase 4 – Templating
+
+Unterstützen:
+
+```text
+{{ .Variable }}
+```
+
+sowie:
+
+```yaml
+variables:
+  - name: PackageName
+    required: true
+```
+
+Ziel:
+
+Module können kleine projektspezifische Anpassungen vornehmen, ohne Code manuell kopieren und suchen zu müssen.
+
+---
+
+## Phase 5 – Go Adapter
+
+Implementieren:
+
+* Go-Projekt-Erkennung
+* `go.mod` erkennen
+* Dependencies hinzufügen
+* Package-Informationen aus Projektstruktur ableiten
+
+Beispiel:
+
+```bash
+tool add-module postgres
+```
+
+führt zu einer kontrollierten Änderung von `go.mod`.
+
+---
+
+## Phase 6 – Lockfile
+
+Implementieren:
+
+* installierte Modulversion
+* Git Commit
+* Dateihashes
+* reproduzierbare Installation
+
+---
+
+## Phase 7 – Update / Doctor
+
+Implementieren:
+
+```bash
+tool update
+tool doctor
+```
+
+`doctor` prüft:
+
+* Projektmanifest
+* fehlende Dateien
+* veränderte Dateien
+* inkompatible Module
+* fehlende Dependencies
+
+---
+
+# 27. Tests
+
+Der Core soll umfangreich mit temporären Verzeichnissen getestet werden.
+
+Wichtige Fälle:
+
+### Installation
+
+```text
+empty project
+    +
+module
+    =
+expected files
+```
+
+### Konflikt
+
+```text
+existing file
+    +
+module
+    =
+no silent overwrite
+```
+
+### Template
+
+```text
+template + variables
+    =
+correct rendered file
+```
+
+### Hash
+
+```text
+install
+modify
+doctor
+    =
+modified detected
+```
+
+### Lockfile
+
+```text
+install
+    =
+deterministic lockfile
+```
+
+### Registry
+
+```text
+registry
+    +
+search
+    =
+correct modules
+```
+
+---
+
+# 28. Definition of Done für MVP
+
+Der MVP ist fertig, wenn folgender Ablauf funktioniert:
+
+```bash
+tool create-project web-go demo
+cd demo
+
+tool search auth
+tool info frontend-auth
+tool add-module frontend-auth
+tool list
+tool doctor
+```
+
+Danach existieren:
+
+```text
+demo/
+├── tool.yaml
+├── tool.lock
+├── go.mod
+├── cmd/
+├── internal/
+│   └── auth/
+│       ├── auth.go
+│       └── session.go
+└── ...
+```
+
+Der installierte Auth-Code kann anschließend vom Entwickler verändert werden, ohne dass das Tool versucht, ihn automatisch zurückzusetzen.
+
+---
+
+# 29. Bewusst spätere Features
+
+Diese Features nicht im MVP implementieren:
+
+## AST-Transformation
+
+Zum Beispiel:
+
+```text
+"füge Middleware in Router ein"
+```
+
+Das ist eine eigene Komplexitätsklasse.
+
+## Intelligentes Merging
+
+Keine automatische semantische Zusammenführung von verändertem und neuem Modulcode.
+
+## C# / TypeScript / Python
+
+Erst implementieren, wenn das Modell mit Go funktioniert.
+
+## Private Registry Authentication
+
+Erst später.
+
+Git selbst bringt bereits viele Authentifizierungsmöglichkeiten mit.
+
+## Web UI
+
+Nicht erforderlich.
+
+## LLM-Unterstützung
+
+Nicht erforderlich und ausdrücklich nicht Bestandteil des Core-Konzepts.
+
+---
+
+# 30. Langfristige Vision
+
+Das System kann sich langfristig zu einer persönlichen oder firmeninternen Sammlung bewährter Engineering-Bausteine entwickeln.
+
+Beispiel:
+
+```text
+my-tool-registry
+
+templates/
+├── web-go
+├── api-go
+└── worker-go
+
+modules/
+├── authentication
+├── authorization
+├── postgres
+├── redis
+├── email
+├── stripe
+├── logging
+├── telemetry
+├── file-storage
+└── http-client
+```
+
+Dabei muss nicht jeder Baustein eine Library werden.
+
+Die Sammlung kann bewusst drei unterschiedliche Dinge enthalten:
+
+```text
+Library
+    = stabile Abstraktion
+
+Module
+    = bewährter Ausgangscode
+
+Template
+    = bewährte Projektstruktur
+```
+
+Der entscheidende Nutzen des Tools ist dadurch nicht maximale Abstraktion, sondern:
+
+> **Einmal bewährten Code ordentlich katalogisieren und danach reproduzierbar in neue Projekte übernehmen, ohne ihn jedes Mal aus irgendeinem alten Repository zusammensuchen zu müssen.**

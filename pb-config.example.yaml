@@ -1,0 +1,3 @@
+sources:
+  - github.com/xyz/lib
+  - gitlab.com/abc/otherlib
