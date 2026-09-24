@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/KaiserWerk/project-bootstrap/internal/lockfile"
 )
 
 func TestInstallFromRepo_BackupsConflicts(t *testing.T) {
@@ -44,5 +46,18 @@ func TestInstallFromRepo_BackupsConflicts(t *testing.T) {
 	}
 	if string(b) != "new" {
 		t.Fatalf("unexpected contents: %s", string(b))
+	}
+
+	// pb.lock should exist and include file hashes for module
+	lf, err := lockfile.Load(filepath.Join(dst, "pb.lock"))
+	if err != nil {
+		t.Fatalf("failed to load pb.lock: %v", err)
+	}
+	ml, ok := lf.Modules["foo"]
+	if !ok {
+		t.Fatalf("pb.lock missing module entry")
+	}
+	if len(ml.Files) == 0 {
+		t.Fatalf("expected file hashes in pb.lock, got none")
 	}
 }

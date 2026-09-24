@@ -2,9 +2,12 @@ package module
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -90,7 +93,13 @@ func InstallFromRepo(repoDir, moduleName, dstRoot string) error {
 	} else {
 		lf = lockfile.New()
 	}
-	lf.Modules[moduleName] = lockfile.ModuleLock{Version: "", Commit: ""}
+	// compute file hashes for the module files
+	filesMap, _ := computeFileHashes(src)
+
+	// detect git commit at repoDir (if present)
+	commit := detectGitCommit(repoDir)
+
+	lf.Modules[moduleName] = lockfile.ModuleLock{Version: "", Commit: commit, Files: filesMap}
 	if err := lf.Save(lockPath); err != nil {
 		return fmt.Errorf("failed to save pb.lock: %w", err)
 	}
@@ -248,4 +257,53 @@ func restoreBackup(backupDir, dstRoot string) error {
 		}
 		return nil
 	})
+}
+
+// computeFileHashes walks src and computes SHA256 for each file (excluding pb.yaml and .git).
+func computeFileHashes(src string) (map[string]string, error) {
+	files := map[string]string{}
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() == "pb.yaml" {
+			return nil
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		h := sha256.New()
+		if _, err := io.Copy(h, f); err != nil {
+			return nil
+		}
+		files[filepath.ToSlash(rel)] = hex.EncodeToString(h.Sum(nil))
+		return nil
+	})
+	return files, err
+}
+
+// detectGitCommit returns the current HEAD commit hash for repoDir if it is a git repository, otherwise empty string.
+func detectGitCommit(repoDir string) string {
+	gitExe, err := exec.LookPath("git")
+	if err != nil {
+		return ""
+	}
+	cmd := exec.Command(gitExe, "-C", repoDir, "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
