@@ -40,3 +40,11 @@ Next steps:
 - Implement registry clone and search
 - Implement `create-project` templating and variable prompts
 - Implement `add-module` installation flow and Go adapter
+
+Lockfile (`pb.lock`):
+
+- After installing a module, `pb` now records a `pb.lock` entry for the module including:
+  - `commit`: the source repository commit hash (when available)
+  - `files`: a map of installed file paths -> SHA256 hashes
+
+This helps detect drift and enables deterministic installs and future verification tooling.
