@@ -10,76 +10,229 @@ import (
 	"bufio"
 	"regexp"
 
+	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"github.com/KaiserWerk/project-bootstrap/internal/config"
+	"github.com/KaiserWerk/project-bootstrap/internal/global"
 	golang "github.com/KaiserWerk/project-bootstrap/internal/language/golang"
 	modulepkg "github.com/KaiserWerk/project-bootstrap/internal/module"
 	"github.com/KaiserWerk/project-bootstrap/internal/registry"
 	templatepkg "github.com/KaiserWerk/project-bootstrap/internal/template"
+	"github.com/KaiserWerk/project-bootstrap/internal/types"
 	"gopkg.in/yaml.v3"
 )
 
 func main() {
-	if len(os.Args) < 2 || os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h" {
-		printUsage()
-		os.Exit(1)
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
 	}
 
-	cmd := os.Args[1]
-	switch cmd {
-	case "create-module":
-		if len(os.Args) < 3 {
-			fmt.Println("usage: pb create-module <name>")
-			os.Exit(2)
-		}
-		fmt.Println("pb create-module <name>")
-	case "search":
-		args := os.Args[2:]
-		search(args)
-	case "info":
-		if len(os.Args) < 3 {
-			fmt.Println("usage: pb info <module>")
-			os.Exit(2)
-		}
-		info(os.Args[2])
-	case "create-project":
-		if len(os.Args) < 3 {
-			fmt.Println("usage: pb create-project <template> [name] [--vars=vars.yaml]")
-			os.Exit(2)
-		}
-		createProjectArgs(os.Args[2:])
-	case "add-module":
-		if len(os.Args) < 3 {
-			fmt.Println("usage: pb add-module <module>")
-			os.Exit(2)
-		}
-		addModule(os.Args[2])
-	case "list":
-		fmt.Println("pb list: list installed modules (stub)")
-	case "update":
-		fmt.Println("pb update: update modules (stub)")
-	case "index":
-		indexCmd()
-	case "doctor":
-		fmt.Println("pb doctor: health checks (stub)")
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
-		printUsage()
+	rootCmd := &cobra.Command{
+		Use:   "pb",
+		Short: "Project Bootstrap CLI",
+	}
+
+	// search
+	searchCmd := &cobra.Command{
+		Use:   "search [query]",
+		Short: "Search modules",
+		Args:  cobra.MaximumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			jsonOut, _ := cmd.Flags().GetBool("json")
+			noIndex, _ := cmd.Flags().GetBool("no-index")
+			query := ""
+			if len(args) > 0 {
+				query = args[0]
+			} else {
+				fmt.Println("no query provided")
+				return
+			}
+			search(query, jsonOut, noIndex)
+		},
+		Example: "pb search 'my-query' --json",
+	}
+	searchCmd.Flags().BoolP("json", "j", false, "Output JSON")
+	searchCmd.Flags().BoolP("no-index", "n", false, "Do not refresh index")
+
+	// info
+	infoCmd := &cobra.Command{
+		Use:   "info <module>",
+		Short: "Show information about a module",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			info(args[0])
+		},
+		Example: "pb info my-module",
+	}
+
+	// create-project
+	createCmd := &cobra.Command{
+		Use:   "create-project <template> [name]",
+		Short: "Create a project from a template",
+		Args:  cobra.MinimumNArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			varsPath, _ := cmd.Flags().GetString("vars")
+			a := []string{args[0]}
+			if len(args) > 1 {
+				a = append(a, args[1])
+			}
+			if varsPath != "" {
+				a = append(a, "--vars="+varsPath)
+			}
+			createProjectArgs(a)
+		},
+		Example: "pb create-project my-template my-project --vars=vars.yaml",
+	}
+	createCmd.Flags().String("vars", "", "Path to vars YAML file")
+
+	// create-registry
+	createIndexCmd := &cobra.Command{
+		Use:   "create-registry",
+		Short: "Create a new registry file",
+		Args:  cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("pb: Creating registry file")
+			createRegistry(cwd)
+		},
+		Example: "pb create-registry",
+	}
+
+	// create-module
+	createModuleCmd := &cobra.Command{
+		Use:   "create-module <name>",
+		Short: "Create a new module",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			name := args[0]
+			fmt.Printf("Creating module: %s\n", name)
+			createModule(cwd, name)
+		},
+		Example: "pb create-module my-cool-module",
+	}
+
+	// add-module
+	addCmd := &cobra.Command{
+		Use:   "add-module <module>",
+		Short: "Add/install a module",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			addModule(args[0])
+		},
+	}
+
+	// list, update, index, doctor
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List installed modules",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("pb list: list installed modules (stub)")
+		},
+		Example: "pb list",
+	}
+	updateCmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update modules",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("pb update: update modules (stub)")
+		},
+		Example: "pb update",
+	}
+	indexCmdWrap := &cobra.Command{
+		Use:   "index",
+		Short: "Build registry index",
+		Run: func(cmd *cobra.Command, args []string) {
+			indexCmd()
+		},
+		Example: "pb index",
+	}
+	doctorCmd := &cobra.Command{
+		Use:   "doctor",
+		Short: "Health checks",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println("pb doctor: health checks (stub)")
+		},
+		Example: "pb doctor",
+	}
+
+	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addCmd, listCmd, updateCmd, indexCmdWrap, doctorCmd, createModuleCmd, createIndexCmd)
+
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
 }
 
-func printUsage() {
-	fmt.Println("pb — Project Bootstrap CLI")
-	fmt.Println()
-	fmt.Println("Usage: pb <command> [args]")
-	fmt.Println()
-	fmt.Println("Commands: search, info, create-project, add-module, list, update, create-module")
-	fmt.Println("Use 'pb help <command>' for more information about a command.")
+func createRegistry(cwd string) {
+	i := types.Registry{
+		Schema: 1,
+		Modules: map[string]types.RegistryModuleInfo{
+			"cool-module": {
+				Description: "cool-module",
+				Tags:        []string{"TagA", "TagB"},
+				Versions:    []string{"0.0.0-alpha", "0.0.1"},
+			},
+		},
+		Templates: map[string]types.RegistryTemplateInfo{
+			"cool-project-template": {
+				Description: "cool-project-template",
+				Versions:    []string{"1.3.22", "1.3.23"},
+			},
+		},
+	}
+
+	y, err := yaml.Marshal(i)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to marshal registry to YAML: %v\n", err)
+		return
+	}
+
+	if err := os.WriteFile(filepath.Join(cwd, global.FilenameRegistryYAML), y, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to write %s: %v\n", global.FilenameRegistryYAML, err)
+		return
+	}
+
+	fmt.Println("pb: " + global.FilenameRegistryYAML + " created.")
 }
 
-func search(args []string) {
+func createModule(cwd, name string) {
+	p := filepath.Join(cwd, name)
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to create module directory: %v\n", err)
+		return
+	}
+
+	mod := types.Module{
+		Name:        name,
+		Description: "Example module",
+		Version:     "0.0.0",
+		Languages:   []string{"golang"},
+		Tags:        []string{"TagA", "TagB"},
+		Dependencies: map[string][]string{
+			"golang": []string{"github.com/example/jwt@v5.3.1"},
+		},
+	}
+
+	y, err := yaml.Marshal(mod)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to marshal module to YAML: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(p, global.FilenameModuleYAML), y, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to write %s: %v\n", global.FilenameModuleYAML, err)
+		return
+	}
+
+	fmt.Printf("pb: done writing %s. You're ready to add files and folder.\n", global.FilenameModuleYAML)
+}
+
+func search(query string, jsonOut, noIndex bool) {
+	panic("unimplemented")
+}
+
+func searchOld(args []string) {
 	jsonOut := false
 	query := ""
 	noIndex := false
