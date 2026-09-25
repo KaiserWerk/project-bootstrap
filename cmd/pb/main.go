@@ -172,7 +172,31 @@ func main() {
 }
 
 func createTemplate(cwd, name string) {
-	panic("unimplemented")
+	t := types.Template{
+		Name:     name,
+		Version:  "0.0.0",
+		Language: "golang",
+		Type:     "cli",
+		Modules:  []string{},
+	}
+
+	p := filepath.Join(cwd, name)
+	if err := os.MkdirAll(filepath.Join(p, "content"), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to create template directory: %v\n", err)
+		return
+	}
+
+	y, err := yaml.Marshal(t)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to marshal template to YAML: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(filepath.Join(p, global.FilenameTemplateYAML), y, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to write %s: %v\n", global.FilenameTemplateYAML, err)
+		return
+	}
+
+	fmt.Printf("pb: done writing %s. You're ready to add files and folder.\n", global.FilenameTemplateYAML)
 }
 
 func createRegistry(cwd string) {
