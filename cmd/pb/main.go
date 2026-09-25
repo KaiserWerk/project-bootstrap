@@ -43,16 +43,9 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			jsonOut, _ := cmd.Flags().GetBool("json")
 			noIndex, _ := cmd.Flags().GetBool("no-index")
-			query := ""
-			if len(args) > 0 {
-				query = args[0]
-			} else {
-				fmt.Println("no query provided")
-				return
-			}
-			search(query, jsonOut, noIndex)
+			search(args[0], jsonOut, noIndex)
 		},
-		Example: "pb search 'my-query' --json",
+		Example: "pb search 'my query'",
 	}
 	searchCmd.Flags().BoolP("json", "j", false, "Output JSON")
 	searchCmd.Flags().BoolP("no-index", "n", false, "Do not refresh index")
@@ -63,7 +56,7 @@ func main() {
 		Short: "Show information about a module",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			info(args[0])
+			getModuleInfo(args[0])
 		},
 		Example: "pb info my-module",
 	}
@@ -113,6 +106,19 @@ func main() {
 		Example: "pb create-module my-cool-module",
 	}
 
+	// create-template
+	createTemplateCmd := &cobra.Command{
+		Use:   "create-template <name>",
+		Short: "Create a new template",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			name := args[0]
+			fmt.Printf("Creating template: %s\n", name)
+			createTemplate(cwd, name)
+		},
+		Example: "pb create-template my-cool-template",
+	}
+
 	// add-module
 	addCmd := &cobra.Command{
 		Use:   "add-module <module>",
@@ -157,12 +163,16 @@ func main() {
 		Example: "pb doctor",
 	}
 
-	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addCmd, listCmd, updateCmd, indexCmdWrap, doctorCmd, createModuleCmd, createIndexCmd)
+	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addCmd, listCmd, updateCmd, indexCmdWrap, doctorCmd, createModuleCmd, createIndexCmd, createTemplateCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
+}
+
+func createTemplate(cwd, name string) {
+	panic("unimplemented")
 }
 
 func createRegistry(cwd string) {
@@ -199,7 +209,7 @@ func createRegistry(cwd string) {
 
 func createModule(cwd, name string) {
 	p := filepath.Join(cwd, name)
-	if err := os.MkdirAll(p, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(p, "content"), 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "pb: failed to create module directory: %v\n", err)
 		return
 	}
@@ -292,7 +302,7 @@ func searchOld(args []string) {
 	}
 }
 
-func info(module string) {
+func getModuleInfo(module string) {
 	cfg := config.LoadConfig()
 	reg := registry.New(cfg.Sources)
 	e, err := reg.FindModule(module)
