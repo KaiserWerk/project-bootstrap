@@ -1,0 +1,1 @@
+go build -o C:\pb\pb.exe -ldflags "-s -w" .\cmd\pb\main.go

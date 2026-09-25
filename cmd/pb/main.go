@@ -21,15 +21,19 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
+	if len(os.Args) < 2 || os.Args[1] == "help" || os.Args[1] == "--help" || os.Args[1] == "-h" {
 		printUsage()
 		os.Exit(1)
 	}
 
 	cmd := os.Args[1]
 	switch cmd {
-	case "init":
-		fmt.Println("pb init: initialize local configuration (stub)")
+	case "create-module":
+		if len(os.Args) < 3 {
+			fmt.Println("usage: pb create-module <name>")
+			os.Exit(2)
+		}
+		fmt.Println("pb create-module <name>")
 	case "search":
 		args := os.Args[2:]
 		search(args)
@@ -71,7 +75,8 @@ func printUsage() {
 	fmt.Println()
 	fmt.Println("Usage: pb <command> [args]")
 	fmt.Println()
-	fmt.Println("Commands: init, search, info, create-project, add-module, list, update, doctor")
+	fmt.Println("Commands: search, info, create-project, add-module, list, update, create-module")
+	fmt.Println("Use 'pb help <command>' for more information about a command.")
 }
 
 func search(args []string) {
