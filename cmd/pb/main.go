@@ -45,13 +45,13 @@ func main() {
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			jsonOut, _ := cmd.Flags().GetBool("json")
-			noIndex, _ := cmd.Flags().GetBool("no-index")
-			searchModules(args[0], filepath.Join(homeDir, "cache", "sources"), jsonOut, noIndex)
+			refresh, _ := cmd.Flags().GetBool("refresh")
+			searchModules(args[0], homeDir, jsonOut, refresh)
 		},
 		Example: "pb search 'my query'",
 	}
 	searchCmd.Flags().BoolP("json", "j", false, "Output JSON")
-	searchCmd.Flags().BoolP("no-index", "n", false, "Do not refresh index")
+	searchCmd.Flags().BoolP("refresh", "r", false, "Refresh index")
 
 	// info
 	infoCmd := &cobra.Command{
@@ -68,7 +68,7 @@ func main() {
 	createCmd := &cobra.Command{
 		Use:   "create-project <template> [name]",
 		Short: "Create a project from a template",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			template := args[0]
 			name := args[1]
@@ -83,7 +83,6 @@ func main() {
 		Short: "Create a new registry file",
 		Args:  cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("pb: Creating registry file")
 			createRegistry(cwd)
 		},
 		Example: "pb create-registry",
@@ -96,7 +95,6 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
-			fmt.Printf("Creating module: %s\n", name)
 			createModule(cwd, name)
 		},
 		Example: "pb create-module my-cool-module",
@@ -324,20 +322,18 @@ func createModule(cwd, name string) {
 	fmt.Printf("pb: done writing %s. You're ready to add files and folder.\n", global.FilenameModuleYAML)
 }
 
-func searchModules(query, workDir string, jsonOut, noIndex bool) {
-	// cfg, err := config.LoadConfig()
-	// if err != nil {
-	// 	fmt.Fprintf(os.Stderr, "pb: failed to load config: %v\n", err)
-	// 	return
-	// }
-
+func searchModules(query, workDir string, jsonOut, refresh bool) {
 	var outputWriter output.ModuleWriter = output.DefaultTextModuleWriter
 	if jsonOut {
 		outputWriter = output.DefaultJSONModuleWriter
 	}
 
+	if refresh {
+		buildCache(workDir)
+	}
+
 	// first the cache lookup
-	modules := getModulesFromCache(query, workDir)
+	modules := getModulesFromCache(query, filepath.Join(workDir, "cache", "sources"))
 	outputWriter.WriteRegistryModule(modules)
 
 }
