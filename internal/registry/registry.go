@@ -2,16 +2,19 @@ package registry
 
 import (
 	"context"
-	"path"
+	"os"
+	"path/filepath"
 
 	"github.com/KaiserWerk/project-bootstrap/internal/gittools"
 )
 
-func DownloadRegistry(source, workdir string) ([]byte, error) {
-	sourceName := path.Base(source)
-	if err := gittools.Clone(context.Background(), source, workdir, sourceName); err != nil {
-		return nil, err
-	}
+func DownloadRegistry(source, sourceDir, sourceName string) error {
+	// just make sure the source directory exists
+	_ = os.MkdirAll(sourceDir, 0o755)
 
-	return nil, nil
+	return gittools.Clone(context.Background(), source, sourceDir, sourceName)
+}
+
+func UpdateRegistry(source, sourceDir, sourceName string) error {
+	return gittools.Pull(context.Background(), filepath.Join(sourceDir, sourceName))
 }

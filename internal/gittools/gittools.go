@@ -40,3 +40,10 @@ func CheckoutNew(ctx context.Context, repoDir, branchName string) error {
 	log.Printf("Executing command: %s\n", cmd.String())
 	return cmd.Run()
 }
+
+func Pull(ctx context.Context, repoDir string) error {
+	cmd := exec.CommandContext(ctx, "git", "pull")
+	cmd.Dir = repoDir
+	log.Printf("Executing command: %s\n", cmd.String())
+	return cmd.Run()
+}

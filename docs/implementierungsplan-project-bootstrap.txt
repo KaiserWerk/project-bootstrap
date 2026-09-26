@@ -306,13 +306,12 @@ Beispiel:
 frontend-auth/
 └── 1.0.0/
     ├── module.yaml
-    └── content/
-        ├── internal/
-        │   └── auth/
-        │       ├── auth.go
-        │       └── session.go
-        └── web/
-            └── auth.js
+    ├── internal/
+    │   └── auth/
+    │       ├── auth.go
+    │       └── session.go
+    └── web/
+        └── auth.js
 ```
 
 ---
@@ -328,16 +327,16 @@ version: 1.0.0
 description: Authentication module for web applications
 
 languages:
-  - go
+  - golang
 
 tags:
   - authentication
   - frontend
   - security
 
-content:
-  - source: content/internal/auth
-    destination: internal/auth
+dependencies:
+  golang:
+    - pkg@version
 ```
 
 ---

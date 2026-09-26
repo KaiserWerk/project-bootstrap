@@ -21,5 +21,14 @@ func (w *JSONModuleWriter) WriteModule(modules []types.Module) error {
 	return err
 }
 
+func (w *JSONModuleWriter) WriteRegistryModule(modules []types.ObjectMetadata) error {
+	data, err := json.MarshalIndent(modules, "", "  ")
+	if err != nil {
+		return err
+	}
+	_, err = w.w.Write(data)
+	return err
+}
+
 var _ ModuleWriter = (*JSONModuleWriter)(nil)
 var DefaultJSONModuleWriter = &JSONModuleWriter{w: os.Stdout}

@@ -1,15 +1,17 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/KaiserWerk/project-bootstrap/internal/config"
 	"github.com/KaiserWerk/project-bootstrap/internal/global"
+	"github.com/KaiserWerk/project-bootstrap/internal/output"
 	"github.com/KaiserWerk/project-bootstrap/internal/registry"
 	"github.com/KaiserWerk/project-bootstrap/internal/types"
 	"gopkg.in/yaml.v3"
@@ -21,6 +23,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+	homeDir = filepath.Clean(homeDir)
+	homeDir = filepath.Join(homeDir, ".pb")
+	_ = os.MkdirAll(homeDir, 0o755)
 
 	rootCmd := &cobra.Command{
 		Use:   "pb",
@@ -35,7 +46,7 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			jsonOut, _ := cmd.Flags().GetBool("json")
 			noIndex, _ := cmd.Flags().GetBool("no-index")
-			search(args[0], jsonOut, noIndex)
+			searchModules(args[0], filepath.Join(homeDir, "cache", "sources"), jsonOut, noIndex)
 		},
 		Example: "pb search 'my query'",
 	}
@@ -59,19 +70,12 @@ func main() {
 		Short: "Create a project from a template",
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			varsPath, _ := cmd.Flags().GetString("vars")
-			a := []string{args[0]}
-			if len(args) > 1 {
-				a = append(a, args[1])
-			}
-			if varsPath != "" {
-				a = append(a, "--vars="+varsPath)
-			}
-			createProjectArgs(a)
+			template := args[0]
+			name := args[1]
+			createProject(template, name, cwd)
 		},
-		Example: "pb create-project my-template my-project --vars=vars.yaml",
+		Example: "pb create-project my-template my-project-name",
 	}
-	createCmd.Flags().String("vars", "", "Path to vars YAML file")
 
 	// create-registry
 	createIndexCmd := &cobra.Command{
@@ -111,13 +115,24 @@ func main() {
 		Example: "pb create-template my-cool-template",
 	}
 
+	// create-config
+	createConfigCmd := &cobra.Command{
+		Use:   "create-config",
+		Short: "Create a new configuration file",
+		Args:  cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			createConfig(homeDir)
+		},
+		Example: "pb create-config",
+	}
+
 	// add-module
 	addCmd := &cobra.Command{
 		Use:   "add-module <module>",
 		Short: "Add/install a module",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			addModule(args[0])
+			//addModule(args[0])
 		},
 	}
 
@@ -138,13 +153,13 @@ func main() {
 		},
 		Example: "pb update",
 	}
-	indexCmdWrap := &cobra.Command{
-		Use:   "index",
-		Short: "Build registry index",
+	buildIndexCmd := &cobra.Command{
+		Use:   "cache",
+		Short: "Build registry cache",
 		Run: func(cmd *cobra.Command, args []string) {
-			buildIndex()
+			buildCache(homeDir)
 		},
-		Example: "pb index",
+		Example: "pb cache",
 	}
 	doctorCmd := &cobra.Command{
 		Use:   "doctor",
@@ -155,34 +170,69 @@ func main() {
 		Example: "pb doctor",
 	}
 
-	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addCmd, listCmd, updateCmd, indexCmdWrap, doctorCmd, createModuleCmd, createIndexCmd, createTemplateCmd)
+	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addCmd, listCmd, updateCmd, buildIndexCmd, doctorCmd, createModuleCmd, createIndexCmd, createTemplateCmd, createConfigCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		os.Exit(2)
+		return
 	}
 }
 
-func buildIndex() {
+func createConfig(workDir string) {
+	fmt.Println("Creating config in", workDir)
+	configPath := filepath.Join(workDir, global.FilenameConfigYAML)
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		cfg := types.PBConfig{
+			Sources: []string{"github.com/KaiserWerk/pb-registry"},
+		}
+
+		y, err := yaml.Marshal(cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pb: failed to marshal config to YAML: %v\n", err)
+			return
+		}
+
+		if err := os.WriteFile(configPath, y, 0o644); err != nil {
+			fmt.Fprintf(os.Stderr, "pb: failed to create config file: %v\n", err)
+			return
+		}
+	} else {
+		fmt.Println("Config already exists at", configPath)
+	}
+}
+
+func buildCache(workDir string) {
 	// 1. read sources from configuration file
 	pbConfig, err := config.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pb: failed to load config: %v\n", err)
 		return
 	}
-	// 2. clone or update (git pull) each source repository into ~/.pb/sources.
+	// 2. download (git clone) or update (git pull) each source repository in(to) ~/.pb/sources.
 	for _, source := range pbConfig.Sources {
-		// download the registry from the source
-		registryData, err := registry.DownloadRegistry(source, filepath.Join(global.DirSources))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "pb: failed to download registry from source %s: %v\n", source, err)
-			return
+		sourceDir := path.Join(workDir, "cache", "sources")
+		sourceName := path.Base(source)
+		// check whether the source exists locally
+		sourceExists := sourceExists(filepath.Join(sourceDir, sourceName))
+		// source exists locally, consider updating it
+		if sourceExists {
+			if err := registry.UpdateRegistry(source, sourceDir, sourceName); err != nil {
+				fmt.Fprintf(os.Stderr, "pb: failed to update registry from source %s: %v\n", source, err)
+				return
+			}
+		} else {
+			// download the registry from the source
+			if err := registry.DownloadRegistry(source, sourceDir, sourceName); err != nil {
+				fmt.Fprintf(os.Stderr, "pb: failed to download registry from source %s: %v\n", source, err)
+				return
+			}
 		}
-		// process the downloaded registry data
 	}
-	// 3. read module and template metadata from each repository
-	// 4. build the index structure
-	// 5. write the index to the appropriate file
+}
+
+func sourceExists(sourceDir string) bool {
+	_, err := os.Stat(sourceDir)
+	return err == nil
 }
 
 func createProjectTemplate(cwd, name string) {
@@ -195,7 +245,7 @@ func createProjectTemplate(cwd, name string) {
 	}
 
 	p := filepath.Join(cwd, name)
-	if err := os.MkdirAll(filepath.Join(p, "content"), 0o755); err != nil {
+	if err := os.MkdirAll(p, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "pb: failed to create template directory: %v\n", err)
 		return
 	}
@@ -246,7 +296,7 @@ func createRegistry(cwd string) {
 
 func createModule(cwd, name string) {
 	p := filepath.Join(cwd, name)
-	if err := os.MkdirAll(filepath.Join(p, "content"), 0o755); err != nil {
+	if err := os.MkdirAll(p, 0o755); err != nil {
 		fmt.Fprintf(os.Stderr, "pb: failed to create module directory: %v\n", err)
 		return
 	}
@@ -257,7 +307,7 @@ func createModule(cwd, name string) {
 		Version:     "0.0.0",
 		Languages:   []string{"golang"},
 		Dependencies: map[string][]string{
-			"golang": {"github.com/example/jwt@v5.3.1"},
+			"golang": {"github.com/example/jwt@v1.2.3"},
 		},
 	}
 
@@ -274,88 +324,99 @@ func createModule(cwd, name string) {
 	fmt.Printf("pb: done writing %s. You're ready to add files and folder.\n", global.FilenameModuleYAML)
 }
 
-func search(query string, jsonOut, noIndex bool) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pb: failed to load config: %v\n", err)
-		return
-	}
-	fmt.Printf("pb search: query=%q\n", query)
-	fmt.Printf("Configured sources: %v\n", cfg.Sources)
-	reg := registry.New(cfg.Sources)
+func searchModules(query, workDir string, jsonOut, noIndex bool) {
+	// cfg, err := config.LoadConfig()
+	// if err != nil {
+	// 	fmt.Fprintf(os.Stderr, "pb: failed to load config: %v\n", err)
+	// 	return
+	// }
 
-	// auto-update index so `pb search` reflects latest registry metadata (unless disabled)
-	if !noIndex {
-		if idxPath, err := reg.BuildIndex(); err != nil {
-			fmt.Fprintf(os.Stderr, "pb: warning: failed building index: %v\n", err)
-		} else {
-			fmt.Printf("pb: refreshed index at %s\n", idxPath)
-		}
-	} else {
-		fmt.Println("pb: skipping index refresh (--no-index)")
-	}
-	results, err := reg.Search(query)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pb: search error: %v\n", err)
-		os.Exit(1)
-	}
-	if len(results) == 0 {
-		fmt.Println("No results found")
-		return
-	}
+	var outputWriter output.ModuleWriter = output.DefaultTextModuleWriter
 	if jsonOut {
-		out := struct {
-			Results []registry.Entry `json:"results"`
-		}{Results: results}
-		b, _ := json.MarshalIndent(out, "", "  ")
-		fmt.Println(string(b))
-		return
+		outputWriter = output.DefaultJSONModuleWriter
 	}
-	fmt.Println("Results:")
-	for _, r := range results {
-		name := r.Name
-		if name == "" && r.Manifest != nil {
-			name = r.Manifest.Project.Name
+
+	// first the cache lookup
+	modules := getModulesFromCache(query, workDir)
+	outputWriter.WriteRegistryModule(modules)
+
+}
+
+func getModulesFromCache(query, workDir string) []types.ObjectMetadata {
+	// loop through all local, canced source directories and collect matching modules
+	// directory: ~/.pb/cache/sources/<source_name>/tool-registry/registry.yaml, which is of type types.Registry.
+	// workDir points to ~/.pb/cache/sources.
+	var modules []types.ObjectMetadata
+
+	// iterate over all source directories in the cache
+	files, err := os.ReadDir(workDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to read cache directory: %v\n", err)
+		return modules
+	}
+	for _, f := range files {
+		if !f.IsDir() {
+			continue
 		}
-		fmt.Printf(" - %s (repo: %s)\n", name, r.RepoDir)
+		registryPath := filepath.Join(workDir, f.Name(), "tool-registry", "registry.yaml")
+		data, err := os.ReadFile(registryPath)
+		if err != nil {
+			continue
+		}
+		var reg types.Registry
+		if err := yaml.Unmarshal(data, &reg); err != nil {
+			continue
+		}
+		for name, meta := range reg.Modules {
+			if strings.Contains(name, query) {
+				meta.Name = name
+				modules = append(modules, meta)
+			}
+		}
 	}
+
+	return modules
 }
 
 func getModuleInfo(module string) {
-	cfg, err := config.LoadConfig()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pb: failed to load config: %v\n", err)
-		return
-	}
-	reg := registry.New(cfg.Sources)
-	e, err := reg.FindModule(module)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "pb: %v\n", err)
-		os.Exit(2)
-	}
-	if e.Manifest != nil {
-		fmt.Printf("Module: %s\n", module)
-		fmt.Printf("Project Name: %s\n", e.Manifest.Project.Name)
-		fmt.Printf("Language: %s\n", e.Manifest.Project.Language)
-		if len(e.Manifest.Modules) > 0 {
-			fmt.Println("Modules included:")
-			for _, m := range e.Manifest.Modules {
-				fmt.Printf(" - %s @ %s\n", m.Name, m.Version)
-			}
-		}
-		fmt.Printf("Source repo path: %s\n", e.RepoDir)
-	} else {
-		fmt.Printf("Module: %s (no manifest available)\n", module)
-	}
+	// cfg, err := config.LoadConfig()
+	// if err != nil {
+	// 	fmt.Fprintf(os.Stderr, "pb: failed to load config: %v\n", err)
+	// 	return
+	// }
+	// reg := registry.New(cfg.Sources)
+	// e, err := reg.FindModule(module)
+	// if err != nil {
+	// 	fmt.Fprintf(os.Stderr, "pb: %v\n", err)
+	// 	os.Exit(2)
+	// }
+	// if e.Manifest != nil {
+	// 	fmt.Printf("Module: %s\n", module)
+	// 	fmt.Printf("Project Name: %s\n", e.Manifest.Project.Name)
+	// 	fmt.Printf("Language: %s\n", e.Manifest.Project.Language)
+	// 	if len(e.Manifest.Modules) > 0 {
+	// 		fmt.Println("Modules included:")
+	// 		for _, m := range e.Manifest.Modules {
+	// 			fmt.Printf(" - %s @ %s\n", m.Name, m.Version)
+	// 		}
+	// 	}
+	// 	fmt.Printf("Source repo path: %s\n", e.RepoDir)
+	// } else {
+	// 	fmt.Printf("Module: %s (no manifest available)\n", module)
+	// }
 }
 
-func createProject(template, name string) {
-	if name == "" {
-		name = template + "-project"
-	}
-	dst := filepath.Join(".", name)
+func createProject(template, name, workDir string) {
+	dst := filepath.Join(workDir, name)
 	fmt.Printf("pb create-project: template=%s name=%s dst=%s\n", template, name, dst)
 	// TODO: implement template copy and variable prompts
+}
+
+// getProjectTemplate retrieves the project template by name from the registry.
+// It returns its metadata, the local path to the template directory, and an error if any.
+// If a template with the given name is not found, the sources will be synced and the search retried.
+func getProjectTemplate(template string) (types.ProjectTemplate, string, error) {
+	panic("getProjectTemplate not implemented")
 }
 
 // func createProjectArgs(args []string) {

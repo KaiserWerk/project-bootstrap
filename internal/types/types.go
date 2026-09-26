@@ -26,10 +26,11 @@ type Registry struct {
 
 // ObjectMetadata represents the metadata for a single project or module template within the registry index.
 type ObjectMetadata struct {
+	Name string `json:"name" yaml:"-"`
 	// Description provides a brief summary of the template.
-	Description string `yaml:"description"`
+	Description string `json:"description" yaml:"description"`
 	// Versions lists the available versions of the template.
-	Versions []string `yaml:"versions"`
+	Versions []string `json:"versions" yaml:"versions"`
 }
 
 // ProjectTemplate represents the structure of a single project template, including its metadata.
@@ -46,11 +47,11 @@ type ProjectTemplate struct {
 	Modules []string `yaml:"modules"`
 }
 
+// PBConfig describes the global configuration for the project bootstrap tool, placed by default in ~/.pb/pb-config.yaml.
 type PBConfig struct {
+	// Sources lists the URLs to git repositories from which project templates and modules can be retrieved.
+	// If a project template or module is not found locally, the tool will attempt to update the local index (git pull) and try to
+	// find it again.
+	// The order of the URLs in this list determines the priority in which they are checked.
 	Sources []string `yaml:"sources"`
-}
-
-type CompiledIndex struct {
-	Modules   map[string]ObjectMetadata `yaml:"modules"`
-	Templates map[string]ObjectMetadata `yaml:"templates"`
 }
