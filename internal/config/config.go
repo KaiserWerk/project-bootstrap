@@ -2,33 +2,34 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
+	"github.com/KaiserWerk/project-bootstrap/internal/types"
 	"gopkg.in/yaml.v3"
 )
 
-type Config struct {
-	Sources []string `yaml:"sources"`
-}
-
 // LoadConfig tries to load ~/.pb/pb-config.yaml and returns default config when absent.
-func LoadConfig() Config {
-	var cfg Config
+func LoadConfig() (*types.PBConfig, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return cfg
+		return nil, err
 	}
-	path := filepath.Join(home, ".pb", "pb-config.yaml")
-	data, err := ioutil.ReadFile(path)
+	dir := filepath.Join(home, ".pb")
+	path := filepath.Join(dir, "pb-config.yaml")
+
+	_ = os.MkdirAll(dir, 0o755) // just to make sure the directory exists
+
+	data, err := os.ReadFile(path)
 	if err != nil {
-		// no config, return empty
-		return cfg
+		return nil, err
 	}
+
+	var cfg types.PBConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "pb: failed to parse config %s: %v\n", path, err)
-		return Config{}
+		return nil, err
 	}
-	return cfg
+
+	return &cfg, nil
 }
