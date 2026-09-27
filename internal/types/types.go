@@ -55,3 +55,18 @@ type PBConfig struct {
 	// The order of the URLs in this list determines the priority in which they are checked.
 	Sources []string `yaml:"sources"`
 }
+
+type ProjectConfig struct {
+	Schema   int     `json:"schema"`
+	Project  Project `json:"project"`
+	Template struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	} `json:"template"`
+	Modules []Module `json:"modules"`
+}
+type Project struct {
+	Name     string `json:"name"`
+	Language string `json:"language"`
+	Type     string `json:"type"`
+}

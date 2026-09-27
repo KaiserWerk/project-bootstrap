@@ -14,11 +14,12 @@ import (
 	"github.com/KaiserWerk/project-bootstrap/internal/output"
 	"github.com/KaiserWerk/project-bootstrap/internal/registry"
 	"github.com/KaiserWerk/project-bootstrap/internal/types"
+	
 	"gopkg.in/yaml.v3"
 )
 
 func main() {
-	cwd, err := os.Getwd()
+	workDir, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return
@@ -70,9 +71,9 @@ func main() {
 		Short: "Create a project from a template",
 		Args:  cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
-			template := args[0]
-			name := args[1]
-			createProject(template, name, cwd)
+			templateName := args[0]
+			projectName := args[1]
+			createProject(templateName, projectName, workDir, homeDir)
 		},
 		Example: "pb create-project my-template my-project-name",
 	}
@@ -83,7 +84,7 @@ func main() {
 		Short: "Create a new registry file",
 		Args:  cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
-			createRegistry(cwd)
+			createRegistry(workDir)
 		},
 		Example: "pb create-registry",
 	}
@@ -95,7 +96,7 @@ func main() {
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
-			createModule(cwd, name)
+			createModule(workDir, name)
 		},
 		Example: "pb create-module my-cool-module",
 	}
@@ -108,7 +109,7 @@ func main() {
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
 			fmt.Printf("Creating template: %s\n", name)
-			createProjectTemplate(cwd, name)
+			createProjectTemplate(workDir, name)
 		},
 		Example: "pb create-template my-cool-template",
 	}
@@ -125,33 +126,17 @@ func main() {
 	}
 
 	// add-module
-	addCmd := &cobra.Command{
+	addModuleCmd := &cobra.Command{
 		Use:   "add-module <module>",
 		Short: "Add/install a module",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			//addModule(args[0])
+			moduleName := args[0]
+			addModule(moduleName, workDir, homeDir)
 		},
 	}
 
-	// list, update, index, doctor
-	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "List installed modules",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("pb list: list installed modules (stub)")
-		},
-		Example: "pb list",
-	}
-	updateCmd := &cobra.Command{
-		Use:   "update",
-		Short: "Update modules",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("pb update: update modules (stub)")
-		},
-		Example: "pb update",
-	}
-	buildIndexCmd := &cobra.Command{
+	buildCacheCmd := &cobra.Command{
 		Use:   "cache",
 		Short: "Build registry cache",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -159,16 +144,8 @@ func main() {
 		},
 		Example: "pb cache",
 	}
-	doctorCmd := &cobra.Command{
-		Use:   "doctor",
-		Short: "Health checks",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("pb doctor: health checks (stub)")
-		},
-		Example: "pb doctor",
-	}
 
-	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addCmd, listCmd, updateCmd, buildIndexCmd, doctorCmd, createModuleCmd, createIndexCmd, createTemplateCmd, createConfigCmd)
+	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addModuleCmd, buildCacheCmd, createModuleCmd, createIndexCmd, createTemplateCmd, createConfigCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -402,17 +379,185 @@ func getModuleInfo(module string) {
 	// }
 }
 
-func createProject(template, name, workDir string) {
-	dst := filepath.Join(workDir, name)
-	fmt.Printf("pb create-project: template=%s name=%s dst=%s\n", template, name, dst)
-	// TODO: implement template copy and variable prompts
+// copies the files belonging to the specified module from the cache to the current working directory.
+func addModule(moduleName, workDir, homeDir string) {
+	// 1. determine the module template path in the local cache.
+	moduleDir, err := getModuleTemplate(moduleName, homeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to get module template: %v\n", err)
+		return
+	}
+
+	// 3. recursively copy template files from templatePath into the projectDir.
+	if err := copyRecursively(moduleDir, workDir); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to copy module files: %v\n", err)
+		return
+	}
+
+	fmt.Printf("pb add-module: successfully added module %s to %s\n", moduleName, workDir)
 }
 
-// getProjectTemplate retrieves the project template by name from the registry.
+func createProject(templateName, projectName, workDir, configDir string) {
+	projectDir := filepath.Join(workDir, projectName)
+	fmt.Printf("pb create-project: template=%s name=%s dst=%s\n", templateName, projectName, projectDir)
+
+	// 1. create project directory
+	if err := os.MkdirAll(projectDir, 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to create project directory: %v\n", err)
+		return
+	}
+
+	// 2. determine the template path by iterating through local sources. if not found, sync sources once and retry
+	templatePath, err := getProjectTemplate(templateName, configDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to get project template: %v\n", err)
+		return
+	}
+
+	fmt.Println("copyRecursively from ", templatePath, "to", projectDir)
+
+	// 3. recursively copy template files from templatePath into the projectDir.
+	if err := copyRecursively(templatePath, projectDir); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to copy template files: %v\n", err)
+		return
+	}
+	fmt.Printf("pb create-project: successfully created project at %s\n", projectDir)
+
+}
+
+// copyRecursively copies all files and directories from sourceDir to targetDir, preserving the directory structure.
+// Directories are created as needed.
+func copyRecursively(sourceDir, targetDir string) error {
+	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		relPath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		destPath := filepath.Join(targetDir, relPath)
+		if info.IsDir() {
+			return os.MkdirAll(destPath, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(destPath, data, 0o644)
+	})
+}
+
+// getModuleTemplate retrieves the module template by name from the local cached registry.
+// It returns its metadata, the local path to the module template directory, and an error if any.
+// If a template with the given name is not found, the sources will be synced and the search retried.
+func getModuleTemplate(templateName string, configDir string) (string, error) {
+	sourcesDir := filepath.Join(configDir, "cache", "sources")
+	// read all registry.yaml files from the subdirectories sourcesDir/<source_name>/tool-registry/registry.yaml
+	entries, err := os.ReadDir(sourcesDir)
+	if err != nil {
+		return "", err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		registryPath := filepath.Join(sourcesDir, entry.Name(), "tool-registry", "registry.yaml")
+		if _, err := os.Stat(registryPath); os.IsNotExist(err) {
+			continue
+		}
+
+		// read and parse the registry.yaml file
+		data, err := os.ReadFile(registryPath)
+		if err != nil {
+			return "", err
+		}
+		var registry types.Registry
+		if err := yaml.Unmarshal(data, &registry); err != nil {
+			return "", err
+		}
+		for name, meta := range registry.Modules {
+			if name == templateName {
+				return filepath.Join(sourcesDir, entry.Name(), "tool-registry", "modules", name, latestVersion(meta.Versions)), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("template %q not found. A cache refresh may help.", templateName)
+}
+
+// getProjectTemplate retrieves the project template by name from the local cached registry.
 // It returns its metadata, the local path to the template directory, and an error if any.
 // If a template with the given name is not found, the sources will be synced and the search retried.
-func getProjectTemplate(template string) (types.ProjectTemplate, string, error) {
-	panic("getProjectTemplate not implemented")
+func getProjectTemplate(templateName string, configDir string) (string, error) {
+	sourcesDir := filepath.Join(configDir, "cache", "sources")
+	// read all registry.yaml files from the subdirectories sourcesDir/<source_name>/tool-registry/registry.yaml
+	entries, err := os.ReadDir(sourcesDir)
+	if err != nil {
+		return "", err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		registryPath := filepath.Join(sourcesDir, entry.Name(), "tool-registry", "registry.yaml")
+		if _, err := os.Stat(registryPath); os.IsNotExist(err) {
+			continue
+		}
+
+		// read and parse the registry.yaml file
+		data, err := os.ReadFile(registryPath)
+		if err != nil {
+			return "", err
+		}
+		var registry types.Registry
+		if err := yaml.Unmarshal(data, &registry); err != nil {
+			return "", err
+		}
+		for name, meta := range registry.Templates {
+			if name == templateName {
+				return filepath.Join(sourcesDir, entry.Name(), "tool-registry", "templates", name, latestVersion(meta.Versions)), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("template %q not found. A cache refresh may help.", templateName)
+}
+
+// latestVersion compares semantic version strings with the 'v' prefix and returns the latest/newest version.
+func latestVersion(s []string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	latest := s[0]
+	for _, v := range s[1:] {
+		if compareVersions(v, latest) > 0 {
+			latest = v
+		}
+	}
+	return latest
+}
+
+// compareVersions compares two semantic version strings with the 'v' prefix.
+// It returns 1 if a > b, -1 if a < b, and 0 if equal.
+func compareVersions(a, b string) int {
+	a = strings.TrimPrefix(a, "v")
+	b = strings.TrimPrefix(b, "v")
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+	for i := 0; i < len(aParts) && i < len(bParts); i++ {
+		if aParts[i] > bParts[i] {
+			return 1
+		} else if aParts[i] < bParts[i] {
+			return -1
+		}
+	}
+	if len(aParts) > len(bParts) {
+		return 1
+	} else if len(aParts) < len(bParts) {
+		return -1
+	}
+	return 0
 }
 
 // func createProjectArgs(args []string) {
