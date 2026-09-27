@@ -28,7 +28,7 @@ I wholeheartedly recommend placing the binary in a directory included in your sy
 
 ## Usage:
 
-Configure at least 1 source first!
+Configure at least 1 source first. Read how to do that in the [Setting up a source repository](#setting-up-a-source-repository) section.
 
 ![creating a project and adding a module](docs/images/pb-create-project.gif)
 
