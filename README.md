@@ -1,12 +1,14 @@
 # pb — Project Bootstrap CLI
 
-A CLI tool to finally stop you from needing to find specific pieces of code in your older projects. Set up once and be done with it.
-pb is designed to help you quickly bootstrap new projects and download reusable code modules across your projects.
+A CLI tool to finally stop you from needing to find specific pieces of code in your older projects or a gist from 4 years ago or a function in an archived repository or a file in some service you might not have access to anymore. Set `pb` up once and be done with it.
+
+`pb` is designed to help you quickly bootstrap new projects and download reusable code into any of your projects.
 Code is stored in any git repository so there's no need for a centralized storage solution.
 
 I created `pb` to finally stop fidgeting with gists, locally saved snippets and code copied from other repositories.
 With `pb` I have central sources for all my reusable code, which I call `modules` in this project.
 `templates` are project blueprints that can be used to quickly set up new projects.
+Lastly, code from modules is expected to be modified - you as the dev write the glue code.
 
 Initially, this went more in the direction of a package manager, but since modules contain code placed in a project with
 the intent to modify them, this thought was discarded. It's more of a code snippet and project bootstrapping tool.
@@ -14,17 +16,21 @@ the intent to modify them, this thought was discarded. It's more of a code snipp
 You are not restricted to using modules and templates from a single source repository. 
 You can configure multiple source repositories in your global configuration file.
 
-Also, you're not language-dependent with this. I love go, but you can use it with any programming language. 
+Also, you're not language-dependent with this. I love Go, but you can use it with any programming language. Or even non-code files, it doesn't really matter.
 Maybe you can come up with even better use cases for your own projects. Let me know!
+
+> Important: it's work-in-progress. Things will probably break before the 1.0.0 release. Code is a mess and documentation may be incomplete.
 
 ## Installation
 
 Get the binary for your OS/Architecture from the [Releases](https://github.com/KaiserWerk/project-bootstrap/releases) page.
-I wholeheartedly recommend placing the binary in a directory included in your system's PATH.
+I wholeheartedly recommend placing the binary in a directory included in your system's `PATH`.
 
 ## Usage:
 
-![creeating a project and adding a module](docs/images/pb-create-project.gif)
+Configure at least 1 source first!
+
+![creating a project and adding a module](docs/images/pb-create-project.gif)
 
 ```bash
 # show commands and parameters
