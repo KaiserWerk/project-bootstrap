@@ -1,1 +1,1 @@
-go build -o C:\pb\pb.exe -ldflags "-s -w" .\cmd\pb\main.go
+go build -o C:\GlobalTools\pb.exe -ldflags "-s -w" .\cmd\pb\main.go

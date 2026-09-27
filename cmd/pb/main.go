@@ -37,6 +37,9 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "pb",
 		Short: "Project Bootstrap CLI",
+		CompletionOptions: cobra.CompletionOptions{
+			HiddenDefaultCmd: true,
+		},
 	}
 
 	// search
@@ -82,7 +85,9 @@ func main() {
 	createIndexCmd := &cobra.Command{
 		Use:   "create-registry",
 		Short: "Create a new registry file",
-		Args:  cobra.ExactArgs(0),
+		Long: `Creates a new registry file in the current working directory, prefilled with some example values.` +
+			`The file is used as an index file for a module/template repository. Edit the file manually as needed.`,
+		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
 			createRegistry(workDir)
 		},
@@ -105,7 +110,9 @@ func main() {
 	createTemplateCmd := &cobra.Command{
 		Use:   "create-template <name>",
 		Short: "Create a new template",
-		Args:  cobra.ExactArgs(1),
+		Long: `Creates a new project template in the current directory. The template can later be used to bootstrap new projects.` +
+			`Edit the template files manually as needed and upload them to your repository.`,
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
 			fmt.Printf("Creating template: %s\n", name)
@@ -117,8 +124,10 @@ func main() {
 	// create-config
 	createConfigCmd := &cobra.Command{
 		Use:   "create-config",
-		Short: "Create a new configuration file",
-		Args:  cobra.ExactArgs(0),
+		Short: "Create a new global configuration file",
+		Long: `Creates a new global configuration file at ~/.pb/pb-config.yaml with default values. Edit the file manually as needed.` +
+			`Subsequent runs of pb will use this configuration. Re-running this command while a configuration file exists will have no effect.`,
+		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
 			createConfig(homeDir)
 		},
@@ -128,8 +137,10 @@ func main() {
 	// add-module
 	addModuleCmd := &cobra.Command{
 		Use:   "add-module <module>",
-		Short: "Add/install a module",
-		Args:  cobra.ExactArgs(1),
+		Short: "Add a module",
+		Long: `Adds the code files of the named module in the current directory, typically your project.` +
+			`The module info and its files will be fetched from the first configured source where it's available and added to the project.`,
+		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			moduleName := args[0]
 			addModule(moduleName, workDir, homeDir)
@@ -139,6 +150,8 @@ func main() {
 	buildCacheCmd := &cobra.Command{
 		Use:   "cache",
 		Short: "Build registry cache",
+		Long: `Builds the local cache of all configured registry sources. This involves cloning or pulling the latest changes from each ` +
+			`source repository into the local cache directory.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			buildCache(homeDir)
 		},
