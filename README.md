@@ -1,4 +1,4 @@
-# pb — Project Bootstrap CLI
+# pb - Project Bootstrap CLI
 
 A CLI tool to finally stop you from needing to find specific pieces of code in your older projects or a gist from 4 years ago or a function in an archived repository or a file in some service you might not have access to anymore. Set `pb` up once and be done with it.
 
@@ -72,14 +72,14 @@ pb cache
 
 ## Setting up a source repository
 
-1. create a git repository in an empty directory.
-2. In the repository, create a folder named `tool-registry` and cd into it.
+1. Create a git repository in an empty directory.
+2. In the repository, create a folder named `tool-registry` and `cd` into it.
 
 3. Create a registry file with the command `pb create-registry`.
 This creates a `registry.yaml` file in the current directory (should be `<repository>/tool-registry/registry.yaml`).
 
-4. Create the folders `modules` and `templates` inside the `tool-registry` directory so they reside alongside the `registry.yaml` file.
+4. Create the folders `modules` and `templates` inside the `tool-registry` directory, so they reside alongside the `registry.yaml` file.
 
-5. Place your created versioned modules and templates inside the `modules` and `templates` folders, respectively.
+5. Create your versioned modules and templates and place them inside the `modules` and `templates` folders, respectively.
 
 6. Commit and push your changes to the remote repository. This repository can now be used as a source in your global configuration file.
