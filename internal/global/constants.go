@@ -5,5 +5,6 @@ const (
 	FilenameRegistryYAML = "registry.yaml"
 	FilenameTemplateYAML = "template.yaml"
 
-	FilenameConfigYAML = "pb-config.yaml"
+	DirectorynameConfigFolder = ".pb"
+	FilenameConfigYAML        = "pb-config.yaml"
 )

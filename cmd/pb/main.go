@@ -14,7 +14,7 @@ import (
 	"github.com/KaiserWerk/project-bootstrap/internal/output"
 	"github.com/KaiserWerk/project-bootstrap/internal/registry"
 	"github.com/KaiserWerk/project-bootstrap/internal/types"
-	
+
 	"gopkg.in/yaml.v3"
 )
 
@@ -31,7 +31,7 @@ func main() {
 		return
 	}
 	homeDir = filepath.Clean(homeDir)
-	homeDir = filepath.Join(homeDir, ".pb")
+	homeDir = filepath.Join(homeDir, global.DirectorynameConfigFolder)
 	_ = os.MkdirAll(homeDir, 0o755)
 
 	rootCmd := &cobra.Command{
@@ -414,8 +414,6 @@ func createProject(templateName, projectName, workDir, configDir string) {
 		return
 	}
 
-	fmt.Println("copyRecursively from ", templatePath, "to", projectDir)
-
 	// 3. recursively copy template files from templatePath into the projectDir.
 	if err := copyRecursively(templatePath, projectDir); err != nil {
 		fmt.Fprintf(os.Stderr, "pb: failed to copy template files: %v\n", err)
@@ -426,7 +424,7 @@ func createProject(templateName, projectName, workDir, configDir string) {
 }
 
 // copyRecursively copies all files and directories from sourceDir to targetDir, preserving the directory structure.
-// Directories are created as needed.
+// Directories are created as needed. YAML files are not copied.
 func copyRecursively(sourceDir, targetDir string) error {
 	return filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -439,6 +437,9 @@ func copyRecursively(sourceDir, targetDir string) error {
 		destPath := filepath.Join(targetDir, relPath)
 		if info.IsDir() {
 			return os.MkdirAll(destPath, 0o755)
+		}
+		if filepath.Ext(info.Name()) == ".yaml" {
+			return nil
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
