@@ -63,7 +63,8 @@ func main() {
 		Short: "Show information about a module",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			getModuleInfo(args[0])
+			moduleName := args[0]
+			getModuleInfo(moduleName, homeDir)
 		},
 		Example: "pb info my-module",
 	}
@@ -364,32 +365,50 @@ func getModulesFromCache(query, workDir string) []types.ObjectMetadata {
 	return modules
 }
 
-func getModuleInfo(module string) {
-	// cfg, err := config.LoadConfig()
-	// if err != nil {
-	// 	fmt.Fprintf(os.Stderr, "pb: failed to load config: %v\n", err)
-	// 	return
-	// }
-	// reg := registry.New(cfg.Sources)
-	// e, err := reg.FindModule(module)
-	// if err != nil {
-	// 	fmt.Fprintf(os.Stderr, "pb: %v\n", err)
-	// 	os.Exit(2)
-	// }
-	// if e.Manifest != nil {
-	// 	fmt.Printf("Module: %s\n", module)
-	// 	fmt.Printf("Project Name: %s\n", e.Manifest.Project.Name)
-	// 	fmt.Printf("Language: %s\n", e.Manifest.Project.Language)
-	// 	if len(e.Manifest.Modules) > 0 {
-	// 		fmt.Println("Modules included:")
-	// 		for _, m := range e.Manifest.Modules {
-	// 			fmt.Printf(" - %s @ %s\n", m.Name, m.Version)
-	// 		}
-	// 	}
-	// 	fmt.Printf("Source repo path: %s\n", e.RepoDir)
-	// } else {
-	// 	fmt.Printf("Module: %s (no manifest available)\n", module)
-	// }
+func getModuleInfo(moduleName, homeDir string) {
+	// iterate over sources in cache
+	moduleDir, err := getModuleTemplate(moduleName, homeDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to get module template: %v\n", err)
+		return
+	}
+
+	moduleInfo, err := getModuleMetadata(moduleDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to get module metadata: %v\n", err)
+		return
+	}
+	fmt.Println("pb info:")
+	fmt.Printf("  name: %s\n", moduleInfo.Name)
+	fmt.Printf("  description: %s\n", moduleInfo.Description)
+	fmt.Printf("  version: %s\n", moduleInfo.Version)
+	fmt.Println("  languages:")
+	for _, lang := range moduleInfo.Languages {
+		fmt.Printf("    - %s\n", lang)
+	}
+	fmt.Println("  dependencies:")
+	for lang, dep := range moduleInfo.Dependencies {
+		fmt.Printf("    %s:\n", lang)
+		for _, d := range dep {
+			fmt.Printf("      - %s\n", d)
+		}
+	}
+}
+
+func getModuleMetadata(moduleDir string) (types.Module, error) {
+	cont, err := os.ReadFile(filepath.Join(moduleDir, global.FilenameModuleYAML))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to read module YAML: %v\n", err)
+		return types.Module{}, err
+	}
+
+	var module types.Module
+	if err := yaml.Unmarshal(cont, &module); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to unmarshal module YAML: %v\n", err)
+		return types.Module{}, err
+	}
+
+	return module, nil
 }
 
 // copies the files belonging to the specified module from the cache to the current working directory.
@@ -407,12 +426,11 @@ func addModule(moduleName, workDir, homeDir string) {
 		return
 	}
 
-	fmt.Printf("pb add-module: successfully added module %s to %s\n", moduleName, workDir)
+	fmt.Printf("pb add-module: successfully added module %q to %q\n", moduleName, workDir)
 }
 
 func createProject(templateName, projectName, workDir, configDir string) {
 	projectDir := filepath.Join(workDir, projectName)
-	fmt.Printf("pb create-project: template=%s name=%s dst=%s\n", templateName, projectName, projectDir)
 
 	// 1. create project directory
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
@@ -463,7 +481,7 @@ func copyRecursively(sourceDir, targetDir string) error {
 }
 
 // getModuleTemplate retrieves the module template by name from the local cached registry.
-// It returns its metadata, the local path to the module template directory, and an error if any.
+// It returns the local path to the module template directory, and an error if any.
 // If a template with the given name is not found, the sources will be synced and the search retried.
 func getModuleTemplate(templateName string, configDir string) (string, error) {
 	sourcesDir := filepath.Join(configDir, "cache", "sources")
