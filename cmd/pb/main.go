@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -140,11 +141,18 @@ func main() {
 		Use:   "add-module <module>",
 		Short: "Add a module",
 		Long: `Adds the code files of the named module in the current directory, typically your project.` +
-			`The module info and its files will be fetched from the first configured source where it's available and added to the project.`,
+			`The module info and its files will be fetched from the first configured source where it's available and added to the project.` +
+			`A version string without prefix (e.g., "1.0.0" instead of "v1.0.0") can be appended to the name to add that specific version.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			moduleName := args[0]
-			addModule(moduleName, workDir, homeDir)
+			moduleVersion := ""
+			if strings.Contains(moduleName, "@") {
+				parts := strings.Split(moduleName, "@")
+				moduleName = parts[0]
+				moduleVersion = parts[1]
+			}
+			addModule(moduleName, moduleVersion, workDir, homeDir)
 		},
 	}
 
@@ -217,6 +225,8 @@ func buildCache(workDir string) {
 			}
 		}
 	}
+
+	fmt.Println("cache built successfully.")
 }
 
 func sourceExists(sourceDir string) bool {
@@ -367,7 +377,7 @@ func getModulesFromCache(query, workDir string) []types.ObjectMetadata {
 
 func getModuleInfo(moduleName, homeDir string) {
 	// iterate over sources in cache
-	moduleDir, err := getModuleTemplate(moduleName, homeDir)
+	moduleDir, err := getModuleTemplate(moduleName, "", homeDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pb: failed to get module template: %v\n", err)
 		return
@@ -412,9 +422,9 @@ func getModuleMetadata(moduleDir string) (types.Module, error) {
 }
 
 // copies the files belonging to the specified module from the cache to the current working directory.
-func addModule(moduleName, workDir, homeDir string) {
+func addModule(moduleName, moduleVersion, workDir, homeDir string) {
 	// 1. determine the module template path in the local cache.
-	moduleDir, err := getModuleTemplate(moduleName, homeDir)
+	moduleDir, err := getModuleTemplate(moduleName, moduleVersion, homeDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "pb: failed to get module template: %v\n", err)
 		return
@@ -426,7 +436,12 @@ func addModule(moduleName, workDir, homeDir string) {
 		return
 	}
 
-	fmt.Printf("pb add-module: successfully added module %q to %q\n", moduleName, workDir)
+	versionStr := ""
+	if moduleVersion != "" {
+		versionStr = "@" + moduleVersion
+	}
+
+	fmt.Printf("pb add-module: successfully added module %s%s to %s\n", moduleName, versionStr, workDir)
 }
 
 func createProject(templateName, projectName, workDir, configDir string) {
@@ -483,8 +498,9 @@ func copyRecursively(sourceDir, targetDir string) error {
 // getModuleTemplate retrieves the module template by name from the local cached registry.
 // It returns the local path to the module template directory, and an error if any.
 // If a template with the given name is not found, the sources will be synced and the search retried.
-func getModuleTemplate(templateName string, configDir string) (string, error) {
+func getModuleTemplate(moduleName, moduleVersion, configDir string) (string, error) {
 	sourcesDir := filepath.Join(configDir, "cache", "sources")
+
 	// read all registry.yaml files from the subdirectories sourcesDir/<source_name>/tool-registry/registry.yaml
 	entries, err := os.ReadDir(sourcesDir)
 	if err != nil {
@@ -492,30 +508,51 @@ func getModuleTemplate(templateName string, configDir string) (string, error) {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		registryPath := filepath.Join(sourcesDir, entry.Name(), "tool-registry", "registry.yaml")
-		if _, err := os.Stat(registryPath); os.IsNotExist(err) {
+		registry, err := readSourceRegistry(entry, sourcesDir, entry.Name())
+		if err != nil {
+			fmt.Printf("failed to read registry.yaml from source %q: %s. Refreshing the cache might fix this.\n", entry.Name(), err.Error())
 			continue
 		}
 
-		// read and parse the registry.yaml file
-		data, err := os.ReadFile(registryPath)
-		if err != nil {
-			return "", err
-		}
-		var registry types.Registry
-		if err := yaml.Unmarshal(data, &registry); err != nil {
-			return "", err
-		}
 		for name, meta := range registry.Modules {
-			if name == templateName {
-				return filepath.Join(sourcesDir, entry.Name(), "tool-registry", "modules", name, latestVersion(meta.Versions)), nil
+			if name == moduleName {
+				// module was found by name, but the requested version may not exist.
+				if moduleVersion == "" {
+					// if no specific version is requested, use the latest available version
+					moduleVersion = latestVersion(meta.Versions)
+				} else {
+					// if a specific version is requested, check if it exists among the available versions
+					if !slices.Contains(meta.Versions, moduleVersion) {
+						// if not, skip the remaining modules to check the next source
+						fmt.Printf("module %q with version %s was not found in source %q\n", moduleName, moduleVersion, entry.Name())
+						break
+					}
+				}
+				return filepath.Join(sourcesDir, entry.Name(), "tool-registry", "modules", name, moduleVersion), nil
 			}
 		}
 	}
-	return "", fmt.Errorf("template %q not found. A cache refresh may help.", templateName)
+	return "", fmt.Errorf("template %q not found. A cache refresh may help.", moduleName)
+}
+
+func readSourceRegistry(entry os.DirEntry, sourcesDir, s string) (types.Registry, error) {
+	if !entry.IsDir() {
+		return types.Registry{}, fmt.Errorf("entry is not a directory")
+	}
+	registryPath := filepath.Join(sourcesDir, entry.Name(), "tool-registry", "registry.yaml")
+	if _, err := os.Stat(registryPath); os.IsNotExist(err) {
+		return types.Registry{}, fmt.Errorf("registry.yaml not found")
+	}
+
+	// read and parse the registry.yaml file
+	data, err := os.ReadFile(registryPath)
+	if err != nil {
+		return types.Registry{}, err
+	}
+	var registry types.Registry
+	err = yaml.Unmarshal(data, &registry)
+
+	return registry, err
 }
 
 // getProjectTemplate retrieves the project template by name from the local cached registry.
