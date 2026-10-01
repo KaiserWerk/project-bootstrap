@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -47,6 +48,7 @@ func main() {
 	searchCmd := &cobra.Command{
 		Use:   "search [query]",
 		Short: "Search modules",
+		Long:  "Search for modules matching the given query within all configured sources.",
 		Args:  cobra.MaximumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			jsonOut, _ := cmd.Flags().GetBool("json")
@@ -62,6 +64,7 @@ func main() {
 	infoCmd := &cobra.Command{
 		Use:   "info <module>",
 		Short: "Show information about a module",
+		Long:  "Display detailed information about the specified module, including its metadata and available versions.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			moduleName := args[0]
@@ -74,6 +77,7 @@ func main() {
 	createCmd := &cobra.Command{
 		Use:   "create-project <template> [name]",
 		Short: "Create a project from a template",
+		Long:  "Create a new project based on the specified template. The project will be created in the current working directory.",
 		Args:  cobra.MinimumNArgs(2),
 		Run: func(cmd *cobra.Command, args []string) {
 			templateName := args[0]
@@ -100,8 +104,9 @@ func main() {
 	updateRegistryCmd := &cobra.Command{
 		Use:   "update-registry",
 		Short: "Update the registry file",
-		Long:  `Updates the registry file in the current working directory. The file is used as an index file for a module/template repository. Edit the file manually as needed.`,
-		Args:  cobra.ExactArgs(0),
+		Long: `Updates the registry file (registry.yaml) in the current working directory according to the actually existing module/template files, ` +
+			`so no manual edits are required when adding/removing/modifying modules and templates to your registry.`,
+		Args: cobra.ExactArgs(0),
 		Run: func(cmd *cobra.Command, args []string) {
 			updateRegistry(workDir)
 		},
@@ -112,6 +117,7 @@ func main() {
 	createModuleCmd := &cobra.Command{
 		Use:   "create-module <name>",
 		Short: "Create a new module",
+		Long:  "Create a new module in the current working directory. The module will be initialized with a module.yaml containing some example values.",
 		Args:  cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
@@ -125,7 +131,7 @@ func main() {
 		Use:   "create-template <name>",
 		Short: "Create a new template",
 		Long: `Creates a new project template in the current directory. The template can later be used to bootstrap new projects.` +
-			`Edit the template files manually as needed and upload them to your repository.`,
+			`Add the template files as needed, place the new template folder inside the modules folder in your registry, and push your changes.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			name := args[0]
@@ -154,7 +160,8 @@ func main() {
 		Short: "Add a module",
 		Long: `Adds the code files of the named module in the current directory, typically your project.` +
 			`The module info and its files will be fetched from the first configured source where it's available and added to the project.` +
-			`A version string without prefix (e.g., "1.0.0" instead of "v1.0.0") can be appended to the name to add that specific version.`,
+			`A version string without prefix (e.g., "1.0.0" instead of "v1.0.0") can be appended to the name to add that specific version.` +
+			`If the specified version is not available, an error will be displayed and no files will be added.`,
 		Args: cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			moduleName := args[0]
@@ -168,18 +175,18 @@ func main() {
 		},
 	}
 
-	buildCacheCmd := &cobra.Command{
-		Use:   "cache",
-		Short: "Build registry cache",
+	buildRegistryCacheCmd := &cobra.Command{
+		Use:   "build-registry-cache",
+		Short: "Build the local cache of all configured registry sources",
 		Long: `Builds the local cache of all configured registry sources. This involves cloning or pulling the latest changes from each ` +
-			`source repository into the local cache directory.`,
+			`configured source repository into the local cache directory in ~/.pb/cache.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			buildCache(homeDir)
 		},
-		Example: "pb cache",
+		Example: "pb build-registry-cache",
 	}
 
-	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addModuleCmd, buildCacheCmd, createModuleCmd, createRegistryCmd, createTemplateCmd, createConfigCmd, updateRegistryCmd)
+	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addModuleCmd, buildRegistryCacheCmd, createModuleCmd, createRegistryCmd, createTemplateCmd, createConfigCmd, updateRegistryCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -210,54 +217,46 @@ func updateRegistry(workDir string) {
 	reg.Modules = make(map[string]types.ObjectMetadata)   // clear the modules map to store the current module versions
 	reg.Templates = make(map[string]types.ObjectMetadata) // clear the templates map to store the current template versions
 
-	// read all direct subdirectories of the modules directory. They represent individual modules. The subdirectory name is the module name.
-	// Underneath, the version directories must be read by name to produce a string slice of versions for each module.
-	// From the newest/highest version, the <module-name>/<version>/module.yaml is read and parsed to get the most reced descrption.
-	filepath.Walk(filepath.Join(workDir, "modules"), func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "pb: failed to walk modules directory: %v\n", err)
-			return err
-		}
-
-		if info.IsDir() {
-			moduleName := info.Name()
+	// read direct subdirectories of the modules directory. Each child is a module name.
+	modulesDir := filepath.Join(workDir, "modules")
+	if entries, err := os.ReadDir(modulesDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			moduleName := e.Name()
 			fmt.Println("Found module:", moduleName)
 
 			var versions []string
 			var description string
-			filepath.Walk(filepath.Join(workDir, "modules", moduleName), func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "pb: failed to walk module directory: %v\n", err)
-					return err
+
+			verPath := filepath.Join(modulesDir, moduleName)
+			if verEntries, err := os.ReadDir(verPath); err == nil {
+				for _, ve := range verEntries {
+					if ve.IsDir() {
+						versions = append(versions, ve.Name())
+						fmt.Println("Found version:", ve.Name())
+					}
 				}
+			}
 
-				if info.IsDir() && info.Name() != moduleName {
-					version := info.Name()
-					fmt.Println("Found version:", version)
-					versions = append(versions, version)
-				}
-
-				return nil
-			})
-
-			slices.Sort(versions)
+			// sort using semantic-aware comparator
+			sort.Slice(versions, func(i, j int) bool { return compareVersions(versions[i], versions[j]) < 0 })
 
 			if len(versions) > 0 {
 				latestVersion := versions[len(versions)-1]
-				modulePath := filepath.Join(workDir, "modules", moduleName, latestVersion, global.FilenameModuleYAML)
+				modulePath := filepath.Join(modulesDir, moduleName, latestVersion, global.FilenameModuleYAML)
 				data, err := os.ReadFile(modulePath)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "pb: failed to read module file: %v\n", err)
-					return nil
+				} else {
+					var module types.Module
+					if err := yaml.Unmarshal(data, &module); err != nil {
+						fmt.Fprintf(os.Stderr, "pb: failed to unmarshal module file: %v\n", err)
+					} else {
+						description = module.Description
+					}
 				}
-
-				var module types.Module
-				if err := yaml.Unmarshal(data, &module); err != nil {
-					fmt.Fprintf(os.Stderr, "pb: failed to unmarshal module file: %v\n", err)
-					return nil
-				}
-
-				description = module.Description
 			}
 
 			reg.Modules[moduleName] = types.ObjectMetadata{
@@ -265,66 +264,56 @@ func updateRegistry(workDir string) {
 				Versions:    versions,
 			}
 		}
+	}
 
-		return nil
-	})
-
-	// read module metadata
-	filepath.Walk(filepath.Join(workDir, "templates"), func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "pb: failed to walk templates directory: %v\n", err)
-			return err
-		}
-
-		if info.IsDir() {
-			templateName := info.Name()
+	// read direct subdirectories of the templates directory. Each child is a template name.
+	templatesDir := filepath.Join(workDir, "templates")
+	if entries, err := os.ReadDir(templatesDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			templateName := e.Name()
 			fmt.Println("Found template:", templateName)
 
 			var versions []string
 			var description string
-			filepath.Walk(filepath.Join(workDir, "templates", templateName), func(path string, info os.FileInfo, err error) error {
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "pb: failed to walk templates directory: %v\n", err)
-					return err
+
+			verPath := filepath.Join(templatesDir, templateName)
+			if verEntries, err := os.ReadDir(verPath); err == nil {
+				for _, ve := range verEntries {
+					if ve.IsDir() {
+						versions = append(versions, ve.Name())
+						fmt.Println("Found version:", ve.Name())
+					}
 				}
+			}
 
-				if info.IsDir() && info.Name() != templateName {
-					version := info.Name()
-					fmt.Println("Found version:", version)
-					versions = append(versions, version)
-				}
-
-				return nil
-			})
-
-			slices.Sort(versions)
+			// sort using semantic-aware comparator
+			sort.Slice(versions, func(i, j int) bool { return compareVersions(versions[i], versions[j]) < 0 })
 
 			if len(versions) > 0 {
 				latestVersion := versions[len(versions)-1]
-				modulePath := filepath.Join(workDir, "templates", templateName, latestVersion, global.FilenameTemplateYAML)
+				modulePath := filepath.Join(templatesDir, templateName, latestVersion, global.FilenameTemplateYAML)
 				data, err := os.ReadFile(modulePath)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "pb: failed to read template file: %v\n", err)
-					return nil
+				} else {
+					var module types.Module
+					if err := yaml.Unmarshal(data, &module); err != nil {
+						fmt.Fprintf(os.Stderr, "pb: failed to unmarshal template file: %v\n", err)
+					} else {
+						description = module.Description
+					}
 				}
-
-				var module types.Module
-				if err := yaml.Unmarshal(data, &module); err != nil {
-					fmt.Fprintf(os.Stderr, "pb: failed to unmarshal template file: %v\n", err)
-					return nil
-				}
-
-				description = module.Description
 			}
 
-			reg.Modules[templateName] = types.ObjectMetadata{
+			reg.Templates[templateName] = types.ObjectMetadata{
 				Description: description,
 				Versions:    versions,
 			}
 		}
-
-		return nil
-	})
+	}
 
 	y, err := yaml.Marshal(reg)
 	if err != nil {
