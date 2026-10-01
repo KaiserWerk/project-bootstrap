@@ -84,7 +84,7 @@ func main() {
 	}
 
 	// create-registry
-	createIndexCmd := &cobra.Command{
+	createRegistryCmd := &cobra.Command{
 		Use:   "create-registry",
 		Short: "Create a new registry file",
 		Long: `Creates a new registry file in the current working directory, prefilled with some example values.` +
@@ -94,6 +94,18 @@ func main() {
 			createRegistry(workDir)
 		},
 		Example: "pb create-registry",
+	}
+
+	// update-registry
+	updateRegistryCmd := &cobra.Command{
+		Use:   "update-registry",
+		Short: "Update the registry file",
+		Long:  `Updates the registry file in the current working directory. The file is used as an index file for a module/template repository. Edit the file manually as needed.`,
+		Args:  cobra.ExactArgs(0),
+		Run: func(cmd *cobra.Command, args []string) {
+			updateRegistry(workDir)
+		},
+		Example: "pb update-registry",
 	}
 
 	// create-module
@@ -167,10 +179,160 @@ func main() {
 		Example: "pb cache",
 	}
 
-	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addModuleCmd, buildCacheCmd, createModuleCmd, createIndexCmd, createTemplateCmd, createConfigCmd)
+	rootCmd.AddCommand(searchCmd, infoCmd, createCmd, addModuleCmd, buildCacheCmd, createModuleCmd, createRegistryCmd, createTemplateCmd, createConfigCmd, updateRegistryCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		return
+	}
+}
+
+func updateRegistry(workDir string) {
+	// read registry file from the current working directory
+	registryPath := filepath.Join(workDir, global.FilenameRegistryYAML)
+	if _, err := os.Stat(registryPath); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "pb: registry file does not exist at %s\n", registryPath)
+		return
+	}
+	// load the registry file
+	data, err := os.ReadFile(registryPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to read registry file: %v\n", err)
+		return
+	}
+	var reg types.Registry
+	if err := yaml.Unmarshal(data, &reg); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to unmarshal registry file: %v\n", err)
+		return
+	}
+	fmt.Println("registry.yaml loaded successfully.")
+
+	reg.Modules = make(map[string]types.ObjectMetadata)   // clear the modules map to store the current module versions
+	reg.Templates = make(map[string]types.ObjectMetadata) // clear the templates map to store the current template versions
+
+	// read all direct subdirectories of the modules directory. They represent individual modules. The subdirectory name is the module name.
+	// Underneath, the version directories must be read by name to produce a string slice of versions for each module.
+	// From the newest/highest version, the <module-name>/<version>/module.yaml is read and parsed to get the most reced descrption.
+	filepath.Walk(filepath.Join(workDir, "modules"), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pb: failed to walk modules directory: %v\n", err)
+			return err
+		}
+
+		if info.IsDir() {
+			moduleName := info.Name()
+			fmt.Println("Found module:", moduleName)
+
+			var versions []string
+			var description string
+			filepath.Walk(filepath.Join(workDir, "modules", moduleName), func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "pb: failed to walk module directory: %v\n", err)
+					return err
+				}
+
+				if info.IsDir() && info.Name() != moduleName {
+					version := info.Name()
+					fmt.Println("Found version:", version)
+					versions = append(versions, version)
+				}
+
+				return nil
+			})
+
+			slices.Sort(versions)
+
+			if len(versions) > 0 {
+				latestVersion := versions[len(versions)-1]
+				modulePath := filepath.Join(workDir, "modules", moduleName, latestVersion, global.FilenameModuleYAML)
+				data, err := os.ReadFile(modulePath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "pb: failed to read module file: %v\n", err)
+					return nil
+				}
+
+				var module types.Module
+				if err := yaml.Unmarshal(data, &module); err != nil {
+					fmt.Fprintf(os.Stderr, "pb: failed to unmarshal module file: %v\n", err)
+					return nil
+				}
+
+				description = module.Description
+			}
+
+			reg.Modules[moduleName] = types.ObjectMetadata{
+				Description: description,
+				Versions:    versions,
+			}
+		}
+
+		return nil
+	})
+
+	// read module metadata
+	filepath.Walk(filepath.Join(workDir, "templates"), func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pb: failed to walk templates directory: %v\n", err)
+			return err
+		}
+
+		if info.IsDir() {
+			templateName := info.Name()
+			fmt.Println("Found template:", templateName)
+
+			var versions []string
+			var description string
+			filepath.Walk(filepath.Join(workDir, "templates", templateName), func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "pb: failed to walk templates directory: %v\n", err)
+					return err
+				}
+
+				if info.IsDir() && info.Name() != templateName {
+					version := info.Name()
+					fmt.Println("Found version:", version)
+					versions = append(versions, version)
+				}
+
+				return nil
+			})
+
+			slices.Sort(versions)
+
+			if len(versions) > 0 {
+				latestVersion := versions[len(versions)-1]
+				modulePath := filepath.Join(workDir, "templates", templateName, latestVersion, global.FilenameTemplateYAML)
+				data, err := os.ReadFile(modulePath)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "pb: failed to read template file: %v\n", err)
+					return nil
+				}
+
+				var module types.Module
+				if err := yaml.Unmarshal(data, &module); err != nil {
+					fmt.Fprintf(os.Stderr, "pb: failed to unmarshal template file: %v\n", err)
+					return nil
+				}
+
+				description = module.Description
+			}
+
+			reg.Modules[templateName] = types.ObjectMetadata{
+				Description: description,
+				Versions:    versions,
+			}
+		}
+
+		return nil
+	})
+
+	y, err := yaml.Marshal(reg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to marshal registry to YAML: %v\n", err)
+		return
+	}
+	if err := os.WriteFile(registryPath, y, 0o644); err != nil {
+		fmt.Fprintf(os.Stderr, "pb: failed to write back registry file: %v\n", err)
 		return
 	}
 }
