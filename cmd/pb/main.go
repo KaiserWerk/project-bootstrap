@@ -39,6 +39,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "pb",
 		Short: "Project Bootstrap CLI",
+		Long:  "Project Bootstrap CLI (pb) to manage and bootstrap projects and add modules to them. A module is a set of files placed in your project to be adapted to your needs. pb is NOT a dependency or package manager.",
 		CompletionOptions: cobra.CompletionOptions{
 			HiddenDefaultCmd: true,
 		},
@@ -93,7 +94,7 @@ func main() {
 		Short: "Create a new registry file",
 		Long: `Creates a new registry file in the current working directory, prefilled with some example values.` +
 			`The file is used as an index file for a module/template repository. Edit the file manually as needed.`,
-		Args: cobra.ExactArgs(0),
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			createRegistry(workDir)
 		},
@@ -106,7 +107,7 @@ func main() {
 		Short: "Update the registry file",
 		Long: `Updates the registry file (registry.yaml) in the current working directory according to the actually existing module/template files, ` +
 			`so no manual edits are required when adding/removing/modifying modules and templates to your registry.`,
-		Args: cobra.ExactArgs(0),
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			updateRegistry(workDir)
 		},
@@ -147,7 +148,7 @@ func main() {
 		Short: "Create a new global configuration file",
 		Long: `Creates a new global configuration file at ~/.pb/pb-config.yaml with default values. Edit the file manually as needed.` +
 			`Subsequent runs of pb will use this configuration. Re-running this command while a configuration file exists will have no effect.`,
-		Args: cobra.ExactArgs(0),
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			createConfig(homeDir)
 		},
@@ -180,6 +181,7 @@ func main() {
 		Short: "Build the local cache of all configured registry sources",
 		Long: `Builds the local cache of all configured registry sources. This involves cloning or pulling the latest changes from each ` +
 			`configured source repository into the local cache directory in ~/.pb/cache.`,
+		Args: cobra.NoArgs,
 		Run: func(cmd *cobra.Command, args []string) {
 			buildCache(homeDir)
 		},

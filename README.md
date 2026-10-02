@@ -67,7 +67,19 @@ pb create-template <template name>
 pb create-template my-cool-template
 
 # (re)build the local sources cache from the configured source repositories
-pb cache
+pb build-registry-cache
+
+# create a new module skeleton
+pb create-module <module name>
+# e.g.:
+pb create-module my-new-module
+
+# create a new project template skeleton
+pb create-template <template name>
+# e.g.:
+pb create-template my-new-template
+
+
 ```
 
 ## Setting up a source repository
