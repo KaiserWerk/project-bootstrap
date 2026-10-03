@@ -34,7 +34,7 @@ func main() {
 	}
 	homeDir = filepath.Clean(homeDir)
 	homeDir = filepath.Join(homeDir, global.DirectorynameConfigFolder)
-	_ = os.MkdirAll(homeDir, 0o755)
+	_ = os.MkdirAll(homeDir, 0o644)
 
 	rootCmd := &cobra.Command{
 		Use:   "pb",
